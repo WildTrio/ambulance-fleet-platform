@@ -3,11 +3,12 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 
-from .models import Hospital, Station, Ambulance, Driver, DriverAssignment, AmbulanceOperationalHistory
+from .models import Hospital, Station, Ambulance, Driver, DriverAssignment, AmbulanceOperationalHistory, Shift, Certification
 from .serializers import (
     HospitalSerializer, StationSerializer, DriverSerializer,
     AmbulanceSerializer, AmbulanceOperationalHistorySerializer,
-    AssignDriverSerializer, TransferStationSerializer, ChangeStatusSerializer
+    AssignDriverSerializer, TransferStationSerializer, ChangeStatusSerializer,
+    ShiftSerializer, CertificationSerializer
 )
 
 class AmbulancePermission(permissions.BasePermission):
@@ -50,6 +51,78 @@ class AmbulanceViewSet(viewsets.ModelViewSet):
             queryset = queryset.filter(station_id=station_filter)
         return queryset
 
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        if instance.status != 'INACTIVE':
+            return Response(
+                {"detail": "Only inactive ambulances can be deleted."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        return super().destroy(request, *args, **kwargs)
+
+    def perform_update(self, serializer):
+        from django.db import transaction
+        from django.utils import timezone
+        
+        ambulance_old = self.get_object()
+        old_status = ambulance_old.status
+        old_station = ambulance_old.station
+        old_station_name = old_station.station_name if old_station else "No Station"
+        
+        with transaction.atomic():
+            ambulance = serializer.save()
+            new_status = ambulance.status
+            new_station = ambulance.station
+            
+            # Status change logic
+            if old_status != new_status:
+                # Log status change operational history
+                AmbulanceOperationalHistory.objects.create(
+                    ambulance=ambulance,
+                    event_type='STATUS_CHANGE',
+                    old_value=old_status,
+                    new_value=new_status,
+                    changed_by=self.request.user,
+                    remarks="Ambulance status updated via edit."
+                )
+                
+                # Rule: When status changes to MAINTENANCE or INACTIVE, auto unassign active driver
+                if new_status in ['MAINTENANCE', 'INACTIVE']:
+                    current_assignment = ambulance.assignments.filter(end_time__isnull=True).first()
+                    if current_assignment:
+                        current_assignment.end_time = timezone.now()
+                        current_assignment.save()
+                        
+                        d = current_assignment.driver
+                        d.availability = True
+                        d.save()
+                        
+                        AmbulanceOperationalHistory.objects.create(
+                            ambulance=ambulance,
+                            event_type='DRIVER_UNASSIGNMENT',
+                            old_value=d.user.name,
+                            new_value=None,
+                            changed_by=self.request.user,
+                            remarks=f"Driver unassigned automatically because ambulance status changed to {new_status}."
+                        )
+            
+            # Station transfer logic
+            if old_station != new_station:
+                # Align hospital_id with station's hospital_id if different
+                if new_station and new_station.hospital != ambulance.hospital:
+                    ambulance.hospital = new_station.hospital
+                    ambulance.save()
+                    
+                new_station_name = new_station.station_name if new_station else "No Station"
+                AmbulanceOperationalHistory.objects.create(
+                    ambulance=ambulance,
+                    event_type='STATION_TRANSFER',
+                    old_value=old_station_name,
+                    new_value=new_station_name,
+                    changed_by=self.request.user,
+                    remarks="Ambulance station transferred via edit."
+                )
+
     @action(detail=True, methods=['POST'], serializer_class=AssignDriverSerializer, url_path='assign-driver')
     def assign_driver(self, request, pk=None):
         ambulance = self.get_object()
@@ -90,6 +163,11 @@ class AmbulanceViewSet(viewsets.ModelViewSet):
                     return Response({"non_field_errors": ["Ambulance under maintenance cannot receive assignments."]}, status=status.HTTP_400_BAD_REQUEST)
                 else:
                     return Response({"non_field_errors": ["Only active ambulances can be assigned."]}, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Availability rule: Drivers marked unavailable cannot receive assignments.
+            is_assigned = DriverAssignment.objects.filter(driver=driver, end_time__isnull=True).exists()
+            if not driver.availability and not is_assigned:
+                return Response({"non_field_errors": ["Drivers marked unavailable cannot receive assignments."]}, status=status.HTTP_400_BAD_REQUEST)
             
             # Reassignment rule:
             # 1. Close driver's active assignments on other ambulances
@@ -268,25 +346,69 @@ class StationViewSet(viewsets.ReadOnlyModelViewSet):
             return [permissions.AllowAny()]
         return [AmbulancePermission()]
 
-class DriverViewSet(viewsets.ReadOnlyModelViewSet):
+class DriverPermission(permissions.BasePermission):
+    """
+    RBAC permission guard for drivers, shifts, and certifications:
+    - Safe actions (list, retrieve): Admin, Fleet Manager, Dispatcher.
+    - Write/modify actions (create, update, delete): Admin, Fleet Manager.
+    """
+    def has_permission(self, request, view):
+        if not request.user or not request.user.is_authenticated:
+            return False
+        if request.user.is_superuser:
+            return True
+        
+        user_role = request.user.role.name if request.user.role else None
+
+        if request.method in permissions.SAFE_METHODS:
+            return user_role in ['HOSPITAL_ADMINISTRATOR', 'FLEET_MANAGER', 'DISPATCHER']
+        
+        return user_role in ['HOSPITAL_ADMINISTRATOR', 'FLEET_MANAGER']
+
+class DriverViewSet(viewsets.ModelViewSet):
     queryset = Driver.objects.all().order_by('user__name')
     serializer_class = DriverSerializer
-    permission_classes = [IsAuthenticated]
-
-    def get_permissions(self):
-        class DriverListPermission(permissions.BasePermission):
-            def has_permission(self, request, view):
-                if not request.user or not request.user.is_authenticated:
-                    return False
-                if request.user.is_superuser:
-                    return True
-                user_role = request.user.role.name if request.user.role else None
-                return user_role in ['HOSPITAL_ADMINISTRATOR', 'FLEET_MANAGER', 'DISPATCHER']
-        return [DriverListPermission()]
+    permission_classes = [IsAuthenticated, DriverPermission]
 
     def get_queryset(self):
         queryset = super().get_queryset()
         available = self.request.query_params.get('available')
         if available == 'true':
             queryset = queryset.filter(availability=True)
+        return queryset
+
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        is_assigned = DriverAssignment.objects.filter(driver=instance, end_time__isnull=True).exists()
+        if is_assigned:
+            return Response(
+                {"detail": "Active drivers cannot be deleted. Unassign the driver from their ambulance first."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        user = instance.user
+        user.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+class ShiftViewSet(viewsets.ModelViewSet):
+    queryset = Shift.objects.all().order_by('-start_time')
+    serializer_class = ShiftSerializer
+    permission_classes = [IsAuthenticated, DriverPermission]
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        driver_id = self.request.query_params.get('driver_id')
+        if driver_id:
+            queryset = queryset.filter(driver_id=driver_id)
+        return queryset
+
+class CertificationViewSet(viewsets.ModelViewSet):
+    queryset = Certification.objects.all().order_by('expiry_date')
+    serializer_class = CertificationSerializer
+    permission_classes = [IsAuthenticated, DriverPermission]
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        driver_id = self.request.query_params.get('driver_id')
+        if driver_id:
+            queryset = queryset.filter(driver_id=driver_id)
         return queryset

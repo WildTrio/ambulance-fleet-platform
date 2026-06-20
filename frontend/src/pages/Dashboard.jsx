@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import './Dashboard.css';
 import Ambulances from './Ambulances';
+import Drivers from './Drivers';
 
 const Dashboard = () => {
   const { user, logout, changePassword } = useAuth();
@@ -90,11 +91,17 @@ const Dashboard = () => {
               >
                 🚑 Ambulance Fleet
               </button>
+              <button 
+                className={`tab-btn ${activeTab === 'drivers' ? 'active' : ''}`}
+                onClick={() => setActiveTab('drivers')}
+              >
+                👥 Drivers
+              </button>
             </div>
           )}
         </header>
 
-        {activeTab === 'profile' ? (
+        {activeTab === 'profile' && (
           <div className="dashboard-grid">
             {/* User Profile Card */}
             <section className="dashboard-card profile-card">
@@ -183,9 +190,9 @@ const Dashboard = () => {
               </form>
             </section>
           </div>
-        ) : (
-          <Ambulances />
         )}
+        {activeTab === 'ambulances' && <Ambulances />}
+        {activeTab === 'drivers' && <Drivers />}
       </main>
     </div>
   );

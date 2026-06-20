@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Hospital, Station, Ambulance, Driver, DriverAssignment, AmbulanceOperationalHistory
+from .models import Hospital, Station, Ambulance, Driver, DriverAssignment, AmbulanceOperationalHistory, Shift, Certification
 
 class HospitalSerializer(serializers.ModelSerializer):
     class Meta:
@@ -12,12 +12,126 @@ class StationSerializer(serializers.ModelSerializer):
         fields = ['id', 'hospital', 'station_name', 'latitude', 'longitude']
 
 class DriverSerializer(serializers.ModelSerializer):
-    name = serializers.CharField(source='user.name', read_only=True)
-    email = serializers.EmailField(source='user.email', read_only=True)
+    name = serializers.CharField(source='user.name', required=True)
+    email = serializers.EmailField(source='user.email', required=True)
+    password = serializers.CharField(write_only=True, required=False, allow_blank=True)
 
     class Meta:
         model = Driver
-        fields = ['id', 'user', 'name', 'email', 'contact', 'license_number', 'availability']
+        fields = ['id', 'user', 'name', 'email', 'password', 'contact', 'license_number', 'availability']
+        read_only_fields = ['user']
+
+    def validate_email(self, value):
+        from django.contrib.auth import get_user_model
+        User = get_user_model()
+        queryset = User.objects.filter(email__iexact=value)
+        if self.instance and self.instance.user:
+            queryset = queryset.exclude(pk=self.instance.user.pk)
+        if queryset.exists():
+            raise serializers.ValidationError("A user with this email already exists.")
+        return value
+
+    def validate_license_number(self, value):
+        queryset = Driver.objects.filter(license_number__iexact=value)
+        if self.instance:
+            queryset = queryset.exclude(pk=self.instance.pk)
+        if queryset.exists():
+            raise serializers.ValidationError("A driver with this license number already exists.")
+        return value
+
+    def validate_contact(self, value):
+        queryset = Driver.objects.filter(contact__iexact=value)
+        if self.instance:
+            queryset = queryset.exclude(pk=self.instance.pk)
+        if queryset.exists():
+            raise serializers.ValidationError("A driver with this contact number already exists.")
+        return value
+
+    def create(self, validated_data):
+        from django.contrib.auth import get_user_model
+        from django.db import transaction
+        from authentication.models import Role
+        
+        User = get_user_model()
+        user_data = validated_data.pop('user', {})
+        password = validated_data.pop('password', 'Password123')
+        if not password:
+            password = 'Password123'
+            
+        with transaction.atomic():
+            try:
+                driver_role = Role.objects.get(name='DRIVER')
+            except Role.DoesNotExist:
+                driver_role = Role.objects.create(name='DRIVER')
+                
+            user = User.objects.create_user(
+                email=user_data.get('email'),
+                name=user_data.get('name'),
+                password=password,
+                role=driver_role
+            )
+            driver = Driver.objects.create(user=user, **validated_data)
+        return driver
+
+    def update(self, instance, validated_data):
+        user_data = validated_data.pop('user', {})
+        password = validated_data.pop('password', None)
+        
+        from django.db import transaction
+        with transaction.atomic():
+            user = instance.user
+            if 'email' in user_data:
+                user.email = user_data['email']
+            if 'name' in user_data:
+                user.name = user_data['name']
+            if password:
+                user.set_password(password)
+            user.save()
+            
+            old_availability = instance.availability
+            for attr, value in validated_data.items():
+                setattr(instance, attr, value)
+            instance.save()
+            
+            new_availability = instance.availability
+            if old_availability is False and new_availability is True:
+                from django.utils import timezone
+                from .models import DriverAssignment, AmbulanceOperationalHistory
+                active_assignments = DriverAssignment.objects.filter(driver=instance, end_time__isnull=True)
+                for aa in active_assignments:
+                    aa.end_time = timezone.now()
+                    aa.save()
+                    
+                    # Log the auto-unassignment
+                    AmbulanceOperationalHistory.objects.create(
+                        ambulance=aa.ambulance,
+                        event_type='DRIVER_UNASSIGNMENT',
+                        old_value=instance.user.name,
+                        new_value=None,
+                        remarks="Driver marked available manually."
+                    )
+        return instance
+
+class ShiftSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Shift
+        fields = ['id', 'driver', 'start_time', 'end_time']
+        
+    def validate(self, data):
+        if data['start_time'] >= data['end_time']:
+            raise serializers.ValidationError("End time must be after start time.")
+        return data
+
+class CertificationSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Certification
+        fields = ['id', 'driver', 'name', 'certificate_number', 'issuing_authority', 'issue_date', 'expiry_date']
+        
+    def validate(self, data):
+        if data['issue_date'] >= data['expiry_date']:
+            raise serializers.ValidationError("Expiry date must be after issue date.")
+        return data
+
 
 class AmbulanceOperationalHistorySerializer(serializers.ModelSerializer):
     changed_by = serializers.CharField(source='changed_by.email', read_only=True)

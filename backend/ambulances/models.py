@@ -49,7 +49,7 @@ class Ambulance(models.Model):
 class Driver(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='driver_profile')
-    contact = models.CharField(max_length=20)
+    contact = models.CharField(max_length=20, unique=True)
     license_number = models.CharField(max_length=50, unique=True)
     availability = models.BooleanField(default=True)
 
@@ -58,8 +58,8 @@ class Driver(models.Model):
 
 class DriverAssignment(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    driver = models.ForeignKey(Driver, on_delete=models.PROTECT, related_name='assignments')
-    ambulance = models.ForeignKey(Ambulance, on_delete=models.PROTECT, related_name='assignments')
+    driver = models.ForeignKey(Driver, on_delete=models.CASCADE, related_name='assignments')
+    ambulance = models.ForeignKey(Ambulance, on_delete=models.CASCADE, related_name='assignments')
     start_time = models.DateTimeField(auto_now_add=True)
     end_time = models.DateTimeField(null=True, blank=True)
 
@@ -86,3 +86,25 @@ class AmbulanceOperationalHistory(models.Model):
 
     def __str__(self):
         return f"{self.ambulance.ambulance_number} - {self.event_type} @ {self.changed_at}"
+
+class Shift(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    driver = models.ForeignKey(Driver, on_delete=models.CASCADE, related_name='shifts')
+    start_time = models.DateTimeField()
+    end_time = models.DateTimeField()
+
+    def __str__(self):
+        return f"{self.driver.user.name}: {self.start_time} to {self.end_time}"
+
+class Certification(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    driver = models.ForeignKey(Driver, on_delete=models.CASCADE, related_name='certifications')
+    name = models.CharField(max_length=100)
+    certificate_number = models.CharField(max_length=100)
+    issuing_authority = models.CharField(max_length=100)
+    issue_date = models.DateField()
+    expiry_date = models.DateField()
+
+    def __str__(self):
+        return f"{self.driver.user.name} - {self.name} ({self.certificate_number})"
+

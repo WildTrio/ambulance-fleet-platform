@@ -29,6 +29,16 @@ A secure, role-restricted web platform for managing hospital ambulance fleets, d
 * **Operational History Logs**: A timeline logging status changes (with optional remarks), station transfers, and driver assignments.
 * **Administrative lookups**: Dropdown lookups feeding hospitals, stations, and available drivers lists.
 
+### Phase 3: Driver Management Module
+* **Driver Dashboard**: Grid view displaying driver license details, contact numbers, email accounts, and availability state badges.
+* **Account Provisioning**: Automatic, secure creation and deletion of matching User credentials (with hashed passwords) when adding/deleting drivers.
+* **Shift Scheduler**: Manage individual working shifts for active drivers with end-time validation.
+* **Certification Logger**: Track and display certifications (BLS, CPR, EVOC) with a validity expiration indicator (Valid/Expired status).
+* **Extended Availability Engine**:
+  * Strict unique constraints on user emails, driver license numbers, and contact numbers.
+  * Deletion security guards blocking the removal of active drivers or active/maintenance vehicles.
+  * Automatic assignment termination when driver availability is manually flipped to available, or when vehicles transition to maintenance/inactive.
+
 ---
 
 ## 💻 Running the Project Locally
@@ -89,7 +99,8 @@ All mock accounts are preseeded with the password **`Password123`**:
 ---
 
 ## 🧪 Testing the APIs
-To run backend unit test suites checking authentication rules, uniqueness validation, and vehicle business constraints:
+To run backend unit test suites checking authentication rules, RBAC permissions, driver profiles, shifts, certifications, and vehicle business constraints:
 ```bash
-python backend/manage.py test authentication ambulances
+# From the backend directory
+.venv/bin/python manage.py test authentication ambulances
 ```

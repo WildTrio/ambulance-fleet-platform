@@ -163,17 +163,17 @@ class Command(BaseCommand):
                 self.stdout.write(f"Created station: {station.station_name}")
 
         self.stdout.write('Seeding drivers...')
-        driver_users = {
-            'driver@hospital.org': 'DL-12345678',
-            'driver2@hospital.org': 'DL-87654321'
-        }
-        for email, license_no in driver_users.items():
-            user = User.objects.get(email=email)
+        driver_users = [
+            {'email': 'driver@hospital.org', 'license_no': 'DL-12345678', 'contact': '555-0100'},
+            {'email': 'driver2@hospital.org', 'license_no': 'DL-87654321', 'contact': '555-0101'}
+        ]
+        for info in driver_users:
+            user = User.objects.get(email=info['email'])
             driver, created = Driver.objects.get_or_create(
                 user=user,
                 defaults={
-                    'contact': '555-0100',
-                    'license_number': license_no,
+                    'contact': info['contact'],
+                    'license_number': info['license_no'],
                     'availability': True
                 }
             )

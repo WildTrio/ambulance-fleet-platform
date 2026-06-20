@@ -1,0 +1,208 @@
+/* Drivers Management Styling */
+.drivers-view {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  width: 100%;
+}
+
+/* Status specific borders for driver cards */
+.driver-card {
+  display: flex;
+  flex-direction: column;
+  padding: 1.25rem;
+  border-top: 4px solid transparent;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.driver-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3);
+}
+
+.driver-card.availability-on {
+  border-top-color: #48bb78;
+}
+
+.driver-card.availability-off {
+  border-top-color: #e53e3e;
+}
+
+.driver-name {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #fff;
+}
+
+/* Modals detailed panels */
+.detail-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.panel-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.inline-form {
+  padding: 1rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  animation: slide-down 0.2s ease-out;
+}
+
+@keyframes slide-down {
+  from { transform: translateY(-10px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+.inline-form h4 {
+  margin: 0 0 1rem;
+  color: #fff;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.logs-list h4 {
+  margin: 0 0 1rem;
+  color: #a0aec0;
+  font-size: 0.95rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.loading-text, .empty-text {
+  text-align: center;
+  color: #a0aec0;
+  padding: 1.5rem;
+  font-style: italic;
+}
+
+/* Shifts Grid */
+.shifts-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  max-height: 250px;
+  overflow-y: auto;
+  padding-right: 0.25rem;
+}
+
+.shift-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem 1rem;
+}
+
+.shift-dates {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.shift-label {
+  font-size: 0.75rem;
+  color: #718096;
+  text-transform: uppercase;
+}
+
+.shift-time {
+  font-size: 0.85rem;
+  color: #edf2f7;
+  font-weight: 500;
+  margin-bottom: 0.25rem;
+}
+
+.shift-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+/* Certifications Grid */
+.certs-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1rem;
+  max-height: 300px;
+  overflow-y: auto;
+  padding-right: 0.25rem;
+}
+
+@media(min-width: 480px) {
+  .certs-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.cert-item {
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  border-left: 4px solid transparent;
+}
+
+.cert-item.valid-border {
+  border-left-color: #48bb78;
+}
+
+.cert-item.expired-border {
+  border-left-color: #e53e3e;
+}
+
+.cert-top-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.cert-title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #fff;
+}
+
+.cert-body-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.85rem;
+}
+
+.cert-label {
+  color: #a0aec0;
+}
+
+.cert-val {
+  color: #e2e8f0;
+  font-weight: 500;
+}
+
+.cert-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 0.25rem;
+}
+
+/* Mini Buttons */
+.btn-edit-mini, .btn-delete-mini {
+  background: none;
+  border: none;
+  font-size: 1rem;
+  cursor: pointer;
+  padding: 0.25rem;
+  border-radius: 4px;
+  transition: background-color 0.2s;
+}
+
+.btn-edit-mini:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.btn-delete-mini:hover {
+  background: rgba(229, 62, 62, 0.15);
+}
