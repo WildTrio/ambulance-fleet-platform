@@ -3,6 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import './Dashboard.css';
 import Ambulances from './Ambulances';
 import Drivers from './Drivers';
+import EmergencyRequests from './EmergencyRequests';
 
 const Dashboard = () => {
   const { user, logout, changePassword } = useAuth();
@@ -52,6 +53,8 @@ const Dashboard = () => {
 
   const userRole = typeof user?.role === 'object' ? user.role?.name : user?.role;
   const [activeTab, setActiveTab] = useState('profile');
+  const showEmergencyQueueTab = ['HOSPITAL_ADMINISTRATOR', 'DISPATCHER'].includes(userRole);
+  const showEmergencyRequestorTab = ['EMERGENCY_REQUESTOR'].includes(userRole);
   const showAmbulanceTab = ['HOSPITAL_ADMINISTRATOR', 'FLEET_MANAGER', 'DISPATCHER'].includes(userRole);
 
   return (
@@ -77,28 +80,46 @@ const Dashboard = () => {
           <h1 className="welcome-title">Welcome back, {user?.name}!</h1>
           <p className="welcome-subtitle">Hospital Ambulance Fleet Management & Emergency Dispatch Platform</p>
           
-          {showAmbulanceTab && (
-            <div className="dashboard-tabs">
+          <div className="dashboard-tabs">
+            <button 
+              className={`tab-btn ${activeTab === 'profile' ? 'active' : ''}`}
+              onClick={() => setActiveTab('profile')}
+            >
+              👤 Profile & Security
+            </button>
+            {showEmergencyQueueTab && (
               <button 
-                className={`tab-btn ${activeTab === 'profile' ? 'active' : ''}`}
-                onClick={() => setActiveTab('profile')}
+                className={`tab-btn ${activeTab === 'emergency-queue' ? 'active' : ''}`}
+                onClick={() => setActiveTab('emergency-queue')}
               >
-                👤 Profile & Security
+                🚨 Emergency Queue
               </button>
+            )}
+            {showEmergencyRequestorTab && (
               <button 
-                className={`tab-btn ${activeTab === 'ambulances' ? 'active' : ''}`}
-                onClick={() => setActiveTab('ambulances')}
+                className={`tab-btn ${activeTab === 'emergency-requests' ? 'active' : ''}`}
+                onClick={() => setActiveTab('emergency-requests')}
               >
-                🚑 Ambulance Fleet
+                🚨 Emergency Requests
               </button>
-              <button 
-                className={`tab-btn ${activeTab === 'drivers' ? 'active' : ''}`}
-                onClick={() => setActiveTab('drivers')}
-              >
-                👥 Drivers
-              </button>
-            </div>
-          )}
+            )}
+            {showAmbulanceTab && (
+              <>
+                <button 
+                  className={`tab-btn ${activeTab === 'ambulances' ? 'active' : ''}`}
+                  onClick={() => setActiveTab('ambulances')}
+                >
+                  🚑 Ambulance Fleet
+                </button>
+                <button 
+                  className={`tab-btn ${activeTab === 'drivers' ? 'active' : ''}`}
+                  onClick={() => setActiveTab('drivers')}
+                >
+                  👥 Drivers
+                </button>
+              </>
+            )}
+          </div>
         </header>
 
         {activeTab === 'profile' && (
@@ -193,6 +214,7 @@ const Dashboard = () => {
         )}
         {activeTab === 'ambulances' && <Ambulances />}
         {activeTab === 'drivers' && <Drivers />}
+        {(activeTab === 'emergency-queue' || activeTab === 'emergency-requests') && <EmergencyRequests />}
       </main>
     </div>
   );

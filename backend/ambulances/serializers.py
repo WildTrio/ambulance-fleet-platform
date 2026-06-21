@@ -1,5 +1,6 @@
 from rest_framework import serializers
-from .models import Hospital, Station, Ambulance, Driver, DriverAssignment, AmbulanceOperationalHistory, Shift, Certification
+from .models import Hospital, Station, Ambulance, Driver, DriverAssignment, AmbulanceOperationalHistory, Shift, Certification, EmergencyRequest
+from authentication.serializers import UserSerializer
 
 class HospitalSerializer(serializers.ModelSerializer):
     class Meta:
@@ -196,3 +197,27 @@ class TransferStationSerializer(serializers.Serializer):
 class ChangeStatusSerializer(serializers.Serializer):
     status = serializers.ChoiceField(choices=Ambulance.STATUS_CHOICES)
     remarks = serializers.CharField(required=False, allow_blank=True)
+
+
+class EmergencyRequestSerializer(serializers.ModelSerializer):
+    created_by = UserSerializer(read_only=True)
+
+    class Meta:
+        model = EmergencyRequest
+        fields = [
+            'id', 'requester_name', 'contact_number', 'emergency_type',
+            'priority', 'pickup_location', 'latitude', 'longitude',
+            'status', 'created_by', 'created_at', 'updated_at'
+        ]
+        read_only_fields = ['id', 'created_by', 'created_at', 'updated_at']
+
+    def validate_latitude(self, value):
+        if value < -90 or value > 90:
+            raise serializers.ValidationError("Latitude must be between -90 and 90.")
+        return value
+
+    def validate_longitude(self, value):
+        if value < -180 or value > 180:
+            raise serializers.ValidationError("Longitude must be between -180 and 180.")
+        return value
+

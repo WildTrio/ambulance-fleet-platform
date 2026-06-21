@@ -3,12 +3,12 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 
-from .models import Hospital, Station, Ambulance, Driver, DriverAssignment, AmbulanceOperationalHistory, Shift, Certification
+from .models import Hospital, Station, Ambulance, Driver, DriverAssignment, AmbulanceOperationalHistory, Shift, Certification, EmergencyRequest
 from .serializers import (
     HospitalSerializer, StationSerializer, DriverSerializer,
     AmbulanceSerializer, AmbulanceOperationalHistorySerializer,
     AssignDriverSerializer, TransferStationSerializer, ChangeStatusSerializer,
-    ShiftSerializer, CertificationSerializer
+    ShiftSerializer, CertificationSerializer, EmergencyRequestSerializer
 )
 
 class AmbulancePermission(permissions.BasePermission):
@@ -412,3 +412,161 @@ class CertificationViewSet(viewsets.ModelViewSet):
         if driver_id:
             queryset = queryset.filter(driver_id=driver_id)
         return queryset
+
+
+class EmergencyRequestPermission(permissions.BasePermission):
+    def has_permission(self, request, view):
+        if not request.user or not request.user.is_authenticated:
+            return False
+        if request.user.is_superuser:
+            return True
+
+        user_role = request.user.role.name if request.user.role else None
+
+        # Read operations (list, retrieve)
+        if request.method in permissions.SAFE_METHODS:
+            return user_role in ['HOSPITAL_ADMINISTRATOR', 'DISPATCHER', 'EMERGENCY_REQUESTOR']
+
+        # Create operation
+        if request.method == 'POST':
+            return user_role in ['DISPATCHER', 'EMERGENCY_REQUESTOR']
+
+        # Update operation (PUT/PATCH)
+        if request.method in ['PUT', 'PATCH']:
+            return user_role in ['HOSPITAL_ADMINISTRATOR', 'DISPATCHER', 'EMERGENCY_REQUESTOR']
+
+        # Delete operation
+        if request.method == 'DELETE':
+            return True
+
+        return False
+
+    def has_object_permission(self, request, view, obj):
+        if request.user.is_superuser:
+            return True
+
+        user_role = request.user.role.name if request.user.role else None
+
+        if request.method == 'DELETE':
+            return True
+
+        if user_role in ['HOSPITAL_ADMINISTRATOR', 'DISPATCHER']:
+            return True
+
+        if user_role == 'EMERGENCY_REQUESTOR':
+            return obj.created_by == request.user
+
+        return False
+
+
+class EmergencyRequestViewSet(viewsets.ModelViewSet):
+    queryset = EmergencyRequest.objects.all()
+    serializer_class = EmergencyRequestSerializer
+    permission_classes = [IsAuthenticated, EmergencyRequestPermission]
+
+    def get_queryset(self):
+        user = self.request.user
+        if user.is_superuser:
+            queryset = EmergencyRequest.objects.all()
+        else:
+            user_role = user.role.name if user.role else None
+            if user_role in ['HOSPITAL_ADMINISTRATOR', 'DISPATCHER']:
+                queryset = EmergencyRequest.objects.all()
+            elif user_role == 'EMERGENCY_REQUESTOR':
+                queryset = EmergencyRequest.objects.filter(created_by=user)
+            else:
+                return EmergencyRequest.objects.none()
+
+        # Apply filtering
+        status_filter = self.request.query_params.get('status')
+        priority_filter = self.request.query_params.get('priority')
+        if status_filter:
+            queryset = queryset.filter(status=status_filter)
+        if priority_filter:
+            queryset = queryset.filter(priority=priority_filter)
+
+        # Apply sorting
+        from django.db.models import Case, When, Value, IntegerField
+        user_role = user.role.name if (not user.is_superuser and user.role) else None
+        if user.is_superuser or user_role in ['HOSPITAL_ADMINISTRATOR', 'DISPATCHER']:
+            queryset = queryset.annotate(
+                priority_order=Case(
+                    When(priority='CRITICAL', then=Value(1)),
+                    When(priority='HIGH', then=Value(2)),
+                    When(priority='MEDIUM', then=Value(3)),
+                    When(priority='LOW', then=Value(4)),
+                    default=Value(5),
+                    output_field=IntegerField()
+                )
+            ).order_by('priority_order', 'created_at')
+        else:
+            queryset = queryset.order_by('-created_at')
+
+        return queryset
+
+    def perform_create(self, serializer):
+        user = self.request.user
+        user_role = user.role.name if (not user.is_superuser and user.role) else None
+
+        extra_kwargs = {'status': 'PENDING', 'created_by': user}
+        if user_role == 'EMERGENCY_REQUESTOR':
+            extra_kwargs['priority'] = 'MEDIUM'
+
+        serializer.save(**extra_kwargs)
+
+    def update(self, request, *args, **kwargs):
+        instance = self.get_object()
+        user = request.user
+        user_role = user.role.name if (not user.is_superuser and user.role) else None
+
+        # Rule 1: once COMPLETED or CANCELLED, reject everything
+        if instance.status in ['COMPLETED', 'CANCELLED']:
+            return Response(
+                {"detail": "Cannot modify an emergency request that is already COMPLETED or CANCELLED."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if user_role == 'EMERGENCY_REQUESTOR':
+            # Check if priority is in request data and is different
+            if 'priority' in request.data and request.data['priority'] != instance.priority:
+                return Response(
+                    {"detail": "Emergency Requestors cannot change the priority of requests."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            # Check if they are trying to set a status other than CANCELLED
+            new_status = request.data.get('status')
+            if new_status and new_status != 'CANCELLED':
+                return Response(
+                    {"detail": "Emergency Requestors can only transition status to CANCELLED."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            # Check status transition to CANCELLED
+            if new_status == 'CANCELLED':
+                if instance.status not in ['PENDING', 'ASSIGNED']:
+                    return Response(
+                        {"detail": "Requests can only be cancelled from PENDING or ASSIGNED status."},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+
+            # Check detail edits (any field other than status)
+            # If the status is not PENDING, they cannot modify any details.
+            has_detail_changes = any(
+                k in request.data and request.data[k] != getattr(instance, k)
+                for k in ['requester_name', 'contact_number', 'pickup_location', 'latitude', 'longitude', 'emergency_type']
+            )
+            if has_detail_changes and instance.status != 'PENDING':
+                return Response(
+                    {"detail": "Details can only be modified when the request is PENDING."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+        return super().update(request, *args, **kwargs)
+
+    def destroy(self, request, *args, **kwargs):
+        return Response(
+            {"detail": "Method not allowed. Use cancellation instead."},
+            status=status.HTTP_405_METHOD_NOT_ALLOWED
+        )
+

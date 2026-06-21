@@ -65,15 +65,13 @@ Before coding provide:
 
 Wait for approval before implementation.
 
-## Current Phase
+## Completed Phases
 
-Authentication & Authorization
+* **Phase 1**: Authentication & Authorization
+* **Phase 4**: Emergency Request Management
 
-Scope:
+## Future Roadmap & Enhancements
 
-* User Login
-* Password Management
-* RBAC
-* User Activity Logging
+* **WebSockets Integration**: Implement Django Channels and Redis to move the Emergency Queue and Citizen Tracking to WebSockets (instead of live polling) for real-time instantaneous updates. This should be combined with the GPS location tracking phase.
+* **Server-Side Pagination**: Configure django-rest-framework pagination for the past/completed emergency cases to optimize database queries once records scale up.
 
-Do not implement Ambulance, Driver, Dispatch, GPS, or Trip modules.

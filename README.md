@@ -39,6 +39,14 @@ A secure, role-restricted web platform for managing hospital ambulance fleets, d
   * Deletion security guards blocking the removal of active drivers or active/maintenance vehicles.
   * Automatic assignment termination when driver availability is manually flipped to available, or when vehicles transition to maintenance/inactive.
 
+### Phase 4: Emergency Request Management
+* **Emergency Request Intake**: Supports logging requests with contact details, medical incident selection (with customizable "Other" option), and location tracking.
+* **Free Geocoding API**: Integrated client-side address resolution via OpenStreetMap's Nominatim API, automatically resolving coordinates (Latitude/Longitude) with manual override fallbacks.
+* **Separated Queue UI Sections**: Division of cases on the UI into "Ongoing Cases" (Pending, Assigned, In Progress) and "Past & Closed Cases" (Completed, Cancelled).
+* **Prioritization & Sorting Queue**: Sorted dynamically by priority severity (Critical > High > Medium > Low) and then by creation timestamp (older first) with real-time auto-polling (every 10 seconds).
+* **Safety Lock on Closed Cases**: Implemented backend-level validations preventing any modifications once a request transitions to Completed or Cancelled.
+* **RBAC Controls**: Allows dispatchers/admins to manage the entire queue and adjust priority/status, while citizens can submit, track, and cancel their own requests.
+
 ---
 
 ## 💻 Running the Project Locally
@@ -99,7 +107,7 @@ All mock accounts are preseeded with the password **`Password123`**:
 ---
 
 ## 🧪 Testing the APIs
-To run backend unit test suites checking authentication rules, RBAC permissions, driver profiles, shifts, certifications, and vehicle business constraints:
+To run backend unit test suites checking authentication rules, RBAC permissions, driver profiles, shifts, certifications, vehicle business constraints, and emergency request lifecycles:
 ```bash
 # From the backend directory
 .venv/bin/python manage.py test authentication ambulances

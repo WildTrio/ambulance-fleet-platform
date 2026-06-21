@@ -108,3 +108,43 @@ class Certification(models.Model):
     def __str__(self):
         return f"{self.driver.user.name} - {self.name} ({self.certificate_number})"
 
+
+class EmergencyRequest(models.Model):
+    PRIORITY_CHOICES = [
+        ('LOW', 'Low'),
+        ('MEDIUM', 'Medium'),
+        ('HIGH', 'High'),
+        ('CRITICAL', 'Critical'),
+    ]
+
+    STATUS_CHOICES = [
+        ('PENDING', 'Pending'),
+        ('ASSIGNED', 'Assigned'),
+        ('IN_PROGRESS', 'In Progress'),
+        ('COMPLETED', 'Completed'),
+        ('CANCELLED', 'Cancelled'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    requester_name = models.CharField(max_length=255)
+    contact_number = models.CharField(max_length=20)
+    emergency_type = models.CharField(max_length=100)
+    priority = models.CharField(max_length=20, choices=PRIORITY_CHOICES, default='MEDIUM')
+    pickup_location = models.CharField(max_length=255)
+    latitude = models.DecimalField(max_digits=9, decimal_places=6)
+    longitude = models.DecimalField(max_digits=9, decimal_places=6)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='PENDING')
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='emergency_requests'
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"{self.requester_name} - {self.emergency_type} ({self.status})"
+
+
