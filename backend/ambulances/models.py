@@ -148,3 +148,43 @@ class EmergencyRequest(models.Model):
         return f"{self.requester_name} - {self.emergency_type} ({self.status})"
 
 
+class Mission(models.Model):
+    MISSION_STATUS_CHOICES = [
+        ('ASSIGNED', 'Assigned'),
+        ('EN_ROUTE', 'En Route'),
+        ('ON_SITE', 'On Site'),
+        ('TRANSPORTING', 'Transporting'),
+        ('ARRIVED_HOSPITAL', 'Arrived at Hospital'),
+        ('COMPLETED', 'Completed'),
+        ('CANCELLED', 'Cancelled'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    emergency_request = models.ForeignKey(
+        EmergencyRequest, 
+        on_delete=models.PROTECT, 
+        related_name='missions'
+    )
+    ambulance = models.ForeignKey(
+        Ambulance, 
+        on_delete=models.PROTECT, 
+        related_name='missions'
+    )
+    driver = models.ForeignKey(
+        Driver, 
+        on_delete=models.PROTECT, 
+        related_name='missions'
+    )
+    status = models.CharField(
+        max_length=50, 
+        choices=MISSION_STATUS_CHOICES, 
+        default='ASSIGNED'
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"Mission {self.id} - Request: {self.emergency_request.requester_name} - Ambulance: {self.ambulance.ambulance_number} ({self.status})"
+
+
+

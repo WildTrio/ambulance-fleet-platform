@@ -64,6 +64,12 @@ class Command(BaseCommand):
                 'is_staff': False,
             },
             {
+                'email': 'driver3@hospital.org',
+                'name': 'Rahul Driver',
+                'role': roles['DRIVER'],
+                'is_staff': False,
+            },
+            {
                 'email': 'citizen@gmail.com',
                 'name': 'John Requestor',
                 'role': roles['EMERGENCY_REQUESTOR'],
@@ -117,6 +123,13 @@ class Command(BaseCommand):
                 'city': 'Metropolis',
                 'state': 'NY',
                 'contact_number': '555-0188'
+            },
+            {
+                'hospital_name': 'Khargone District Hospital',
+                'address': 'Khandwa Road',
+                'city': 'Khargone',
+                'state': 'MP',
+                'contact_number': '555-0200'
             }
         ]
 
@@ -149,6 +162,12 @@ class Command(BaseCommand):
                 'station_name': 'Station Gamma - East Side',
                 'latitude': 40.7484,
                 'longitude': -73.9857
+            },
+            {
+                'hospital': hospitals['Khargone District Hospital'],
+                'station_name': 'Khargone Central Station',
+                'latitude': 21.820600,
+                'longitude': 75.609400
             }
         ]
 
@@ -165,7 +184,8 @@ class Command(BaseCommand):
         self.stdout.write('Seeding drivers...')
         driver_users = [
             {'email': 'driver@hospital.org', 'license_no': 'DL-12345678', 'contact': '555-0100'},
-            {'email': 'driver2@hospital.org', 'license_no': 'DL-87654321', 'contact': '555-0101'}
+            {'email': 'driver2@hospital.org', 'license_no': 'DL-87654321', 'contact': '555-0101'},
+            {'email': 'driver3@hospital.org', 'license_no': 'DL-11223344', 'contact': '555-0102'}
         ]
         for info in driver_users:
             user = User.objects.get(email=info['email'])
@@ -202,6 +222,13 @@ class Command(BaseCommand):
                 'station': stations['Station Gamma - East Side'],
                 'type': 'Patient Transport',
                 'status': 'INACTIVE'
+            },
+            {
+                'ambulance_number': 'AMB-MP-09',
+                'hospital': hospitals['Khargone District Hospital'],
+                'station': stations['Khargone Central Station'],
+                'type': 'Advanced Life Support',
+                'status': 'ACTIVE'
             }
         ]
 

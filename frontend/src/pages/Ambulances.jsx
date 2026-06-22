@@ -348,9 +348,15 @@ const Ambulances = () => {
             <div key={amb.id} className={`ambulance-card bg-glass status-${amb.status.toLowerCase()}`}>
               <div className="card-top">
                 <span className="ambulance-no">🚨 {amb.ambulance_number}</span>
-                <span className={`status-badge badge-${amb.status.toLowerCase()}`}>
-                  {amb.status}
-                </span>
+                {amb.active_mission ? (
+                  <span className="status-badge badge-mission badge-mission-pulse">
+                    On Mission ({amb.active_mission.status})
+                  </span>
+                ) : (
+                  <span className={`status-badge badge-${amb.status.toLowerCase()}`}>
+                    {amb.status}
+                  </span>
+                )}
               </div>
               <div className="card-body">
                 <div className="card-detail">
@@ -379,19 +385,44 @@ const Ambulances = () => {
                 </button>
                 {isWritable && (
                   <>
-                    <button className="btn-action btn-secondary" onClick={() => handleOpenModal('assign', amb)}>
+                    <button 
+                      className="btn-action btn-secondary" 
+                      onClick={() => handleOpenModal('assign', amb)}
+                      disabled={!!amb.active_mission}
+                      title={amb.active_mission ? "Cannot change driver assignment while the ambulance is on an active mission." : ""}
+                    >
                       Assign
                     </button>
-                    <button className="btn-action btn-secondary" onClick={() => handleOpenModal('transfer', amb)}>
+                    <button 
+                      className="btn-action btn-secondary" 
+                      onClick={() => handleOpenModal('transfer', amb)}
+                      disabled={!!amb.active_mission}
+                      title={amb.active_mission ? "Cannot transfer station while the ambulance is on an active mission." : ""}
+                    >
                       Transfer
                     </button>
-                    <button className="btn-action btn-secondary" onClick={() => handleOpenModal('status', amb)}>
+                    <button 
+                      className="btn-action btn-secondary" 
+                      onClick={() => handleOpenModal('status', amb)}
+                      disabled={!!amb.active_mission}
+                      title={amb.active_mission ? "Cannot change status while the ambulance is on an active mission." : ""}
+                    >
                       Status
                     </button>
-                    <button className="btn-action btn-secondary" onClick={() => handleOpenModal('edit', amb)}>
+                    <button 
+                      className="btn-action btn-secondary" 
+                      onClick={() => handleOpenModal('edit', amb)}
+                      disabled={!!amb.active_mission}
+                      title={amb.active_mission ? "Cannot edit details while the ambulance is on an active mission." : ""}
+                    >
                       Edit
                     </button>
-                    <button className="btn-action btn-danger" onClick={() => handleDelete(amb.id)}>
+                    <button 
+                      className="btn-action btn-danger" 
+                      onClick={() => handleDelete(amb.id)}
+                      disabled={!!amb.active_mission}
+                      title={amb.active_mission ? "Cannot delete the ambulance while it is on an active mission." : ""}
+                    >
                       Delete
                     </button>
                   </>

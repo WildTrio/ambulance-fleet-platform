@@ -2,7 +2,8 @@ from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from .views import (
     AmbulanceViewSet, HospitalViewSet, StationViewSet, DriverViewSet,
-    ShiftViewSet, CertificationViewSet, EmergencyRequestViewSet
+    ShiftViewSet, CertificationViewSet, EmergencyRequestViewSet,
+    MissionViewSet
 )
 
 router = DefaultRouter()
@@ -13,6 +14,7 @@ router.register(r'drivers', DriverViewSet, basename='driver')
 router.register(r'shifts', ShiftViewSet, basename='shift')
 router.register(r'certifications', CertificationViewSet, basename='certification')
 router.register(r'emergency-requests', EmergencyRequestViewSet, basename='emergency-request')
+router.register(r'missions', MissionViewSet, basename='mission')
 
 urlpatterns = [
     path('', include(router.urls)),

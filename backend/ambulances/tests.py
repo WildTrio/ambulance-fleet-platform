@@ -3,7 +3,7 @@ from rest_framework import status
 from rest_framework.test import APITestCase
 from django.contrib.auth import get_user_model
 from authentication.models import Role
-from ambulances.models import Hospital, Station, Ambulance, Driver, DriverAssignment, AmbulanceOperationalHistory, Shift, Certification
+from ambulances.models import Hospital, Station, Ambulance, Driver, DriverAssignment, AmbulanceOperationalHistory, Shift, Certification, EmergencyRequest, Mission
 
 User = get_user_model()
 
@@ -584,3 +584,334 @@ class ShiftCertificationAPITests(APITestCase):
         response = self.client.delete(detail_url)
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
         self.assertEqual(Certification.objects.count(), 0)
+
+
+class DispatchConsoleMissionTests(APITestCase):
+
+    def setUp(self):
+        # Roles
+        self.admin_role = Role.objects.create(name='HOSPITAL_ADMINISTRATOR')
+        self.dispatcher_role = Role.objects.create(name='DISPATCHER')
+        self.fleet_role = Role.objects.create(name='FLEET_MANAGER')
+        self.driver_role = Role.objects.create(name='DRIVER')
+        self.citizen_role = Role.objects.create(name='EMERGENCY_REQUESTOR')
+
+        # Users
+        self.admin_user = User.objects.create_user(email='admin@h.org', name='Admin', password='Password123!', role=self.admin_role)
+        self.disp_user = User.objects.create_user(email='disp@h.org', name='Dispatcher', password='Password123!', role=self.dispatcher_role)
+        self.fleet_user = User.objects.create_user(email='fleet@h.org', name='Fleet', password='Password123!', role=self.fleet_role)
+        self.driver_user = User.objects.create_user(email='driver@h.org', name='Driver', password='Password123!', role=self.driver_role)
+        self.citizen_user = User.objects.create_user(email='citizen@g.com', name='Citizen', password='Password123!', role=self.citizen_role)
+
+        # Drivers
+        self.driver1 = Driver.objects.create(user=self.driver_user, contact="555-0101", license_number="DL-101", availability=True)
+        
+        # Hospital & Stations
+        self.hospital = Hospital.objects.create(hospital_name="City Hospital", address="123 Hospital St", city="City", state="State", contact_number="1234567")
+        self.station1 = Station.objects.create(hospital=self.hospital, station_name="Station A", latitude=37.774900, longitude=-122.419400)
+        self.station2 = Station.objects.create(hospital=self.hospital, station_name="Station B", latitude=37.784900, longitude=-122.429400)
+
+        # Ambulances
+        self.amb1 = Ambulance.objects.create(ambulance_number="AMB-101", hospital=self.hospital, station=self.station1, type="Basic Life Support", status="ACTIVE")
+        self.amb2 = Ambulance.objects.create(ambulance_number="AMB-102", hospital=self.hospital, station=self.station2, type="Advanced Life Support", status="ACTIVE")
+        self.amb_maint = Ambulance.objects.create(ambulance_number="AMB-999", hospital=self.hospital, station=self.station1, type="Patient Transport", status="MAINTENANCE")
+
+        # Assign driver1 to amb1
+        DriverAssignment.objects.create(driver=self.driver1, ambulance=self.amb1)
+        self.driver1.availability = False
+        self.driver1.save()
+
+        # Emergency Requests
+        self.req1 = EmergencyRequest.objects.create(
+            requester_name="Patient A", contact_number="555-9999", emergency_type="Stroke",
+            priority="CRITICAL", pickup_location="789 Market St", latitude=37.774900, longitude=-122.419400,
+            status="PENDING", created_by=self.citizen_user
+        )
+        self.req2 = EmergencyRequest.objects.create(
+            requester_name="Patient B", contact_number="555-8888", emergency_type="Trauma",
+            priority="HIGH", pickup_location="456 Mission St", latitude=37.778000, longitude=-122.422000,
+            status="PENDING", created_by=self.citizen_user
+        )
+
+    def test_nearby_ambulances_endpoint(self):
+        url = reverse('ambulance-nearby')
+        self.client.force_authenticate(user=self.disp_user)
+        
+        # Test validation error
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+        # Test valid request (uses fallback or routing)
+        response = self.client.get(f"{url}?latitude=37.7749&longitude=-122.4194")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertTrue(len(response.data) >= 2)
+        
+        # Verify distance is computed and first ambulance is nearest (amb1 is at station1 which is at 37.7749, -122.4194)
+        self.assertEqual(response.data[0]['ambulance_number'], "AMB-101")
+        self.assertAlmostEqual(response.data[0]['distance'], 0.0, places=1)
+        self.assertEqual(response.data[0]['readiness_info'], "Ready")
+
+    def test_mission_creation_and_lifecycle(self):
+        self.client.force_authenticate(user=self.disp_user)
+        
+        # Create Mission
+        url = reverse('mission-list')
+        data = {
+            "emergency_request_id": str(self.req1.id),
+            "ambulance_id": str(self.amb1.id)
+        }
+        
+        # Success creation
+        response = self.client.post(url, data, format='json')
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        mission_id = response.data['id']
+        
+        # Verify emergency request status updated to ASSIGNED
+        self.req1.refresh_from_db()
+        self.assertEqual(self.req1.status, "ASSIGNED")
+        
+        # Verify ambulance is now busy (ON_MISSION in nearby endpoint)
+        nearby_url = reverse('ambulance-nearby')
+        response_nearby = self.client.get(f"{nearby_url}?latitude=37.7749&longitude=-122.4194")
+        self.assertEqual(response_nearby.data[0]['availability_status'], "ON_MISSION")
+
+        # Verify duplicate dispatch fails
+        response_dup = self.client.post(url, data, format='json')
+        self.assertEqual(response_dup.status_code, status.HTTP_400_BAD_REQUEST)
+
+        # Update mission status to EN_ROUTE
+        detail_url = reverse('mission-detail', kwargs={'pk': mission_id})
+        response = self.client.patch(detail_url, {"status": "EN_ROUTE"}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.req1.refresh_from_db()
+        self.assertEqual(self.req1.status, "IN_PROGRESS")
+
+        # Update mission status to COMPLETED
+        response = self.client.patch(detail_url, {"status": "COMPLETED"}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.req1.refresh_from_db()
+        self.assertEqual(self.req1.status, "COMPLETED")
+
+    def test_mission_cancellation(self):
+        self.client.force_authenticate(user=self.disp_user)
+        
+        # Create mission
+        url = reverse('mission-list')
+        data = {
+            "emergency_request_id": str(self.req2.id),
+            "ambulance_id": str(self.amb1.id)
+        }
+        response = self.client.post(url, data, format='json')
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        mission_id = response.data['id']
+
+        # Cancel mission
+        detail_url = reverse('mission-detail', kwargs={'pk': mission_id})
+        response = self.client.patch(detail_url, {"status": "CANCELLED"}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        
+        # Verify emergency request reverted to PENDING
+        self.req2.refresh_from_db()
+        self.assertEqual(self.req2.status, "PENDING")
+
+    def test_role_restrictions(self):
+        # Citizen try to create mission
+        url = reverse('mission-list')
+        self.client.force_authenticate(user=self.citizen_user)
+        data = {
+            "emergency_request_id": str(self.req1.id),
+            "ambulance_id": str(self.amb1.id)
+        }
+        response = self.client.post(url, data, format='json')
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_mission_creation_with_driver_assignment_on_fly(self):
+        self.client.force_authenticate(user=self.disp_user)
+        
+        # Create a second driver who is available
+        driver2_user = User.objects.create_user(email='driver2_test@h.org', name='Driver 2', password='Password123!', role=self.driver_role)
+        driver2 = Driver.objects.create(user=driver2_user, contact="555-0102", license_number="DL-102", availability=True)
+        
+        # Create Mission with driver_id specified
+        url = reverse('mission-list')
+        data = {
+            "emergency_request_id": str(self.req2.id),
+            "ambulance_id": str(self.amb2.id),
+            "driver_id": str(driver2.id)
+        }
+        
+        # Success creation
+        response = self.client.post(url, data, format='json')
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        
+        # Verify driver is assigned to ambulance
+        driver2.refresh_from_db()
+        self.assertEqual(driver2.availability, False)
+        
+        # Verify assignment was created
+        assignment_exists = DriverAssignment.objects.filter(driver=driver2, ambulance=self.amb2, end_time__isnull=True).exists()
+        self.assertTrue(assignment_exists)
+        
+        # Verify emergency request status updated to ASSIGNED
+        self.req2.refresh_from_db()
+        self.assertEqual(self.req2.status, "ASSIGNED")
+
+    def test_dispatcher_can_assign_driver(self):
+        self.client.force_authenticate(user=self.disp_user)
+        
+        # Create a new available driver
+        driver3_user = User.objects.create_user(email='driver3_test@h.org', name='Driver 3', password='Password123!', role=self.driver_role)
+        driver3 = Driver.objects.create(user=driver3_user, contact="555-0103", license_number="DL-103", availability=True)
+        
+        url = reverse('ambulance-assign-driver', kwargs={'pk': str(self.amb2.id)})
+        data = {
+            "driver_id": str(driver3.id)
+        }
+        
+        response = self.client.post(url, data, format='json')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        
+        # Verify assignment was created
+        assignment_exists = DriverAssignment.objects.filter(driver=driver3, ambulance=self.amb2, end_time__isnull=True).exists()
+        self.assertTrue(assignment_exists)
+
+    def test_request_status_to_pending_cancels_mission(self):
+        self.client.force_authenticate(user=self.disp_user)
+        url = reverse('mission-list')
+        data = {
+            "emergency_request_id": str(self.req2.id),
+            "ambulance_id": str(self.amb1.id)
+        }
+        response = self.client.post(url, data, format='json')
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        mission_id = response.data['id']
+        
+        # Verify request status became ASSIGNED
+        self.req2.refresh_from_db()
+        self.assertEqual(self.req2.status, "ASSIGNED")
+        
+        # Now dispatcher updates request status directly to PENDING
+        req_url = reverse('emergency-request-detail', kwargs={'pk': str(self.req2.id)})
+        req_data = {
+            "status": "PENDING"
+        }
+        response = self.client.patch(req_url, req_data, format='json')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        
+        # Verify the mission is now CANCELLED
+        mission = Mission.objects.get(id=mission_id)
+        self.assertEqual(mission.status, "CANCELLED")
+
+    def test_request_status_to_completed_completes_mission(self):
+        self.client.force_authenticate(user=self.disp_user)
+        # Create a mission
+        url = reverse('mission-list')
+        data = {
+            "emergency_request_id": str(self.req2.id),
+            "ambulance_id": str(self.amb1.id)
+        }
+        response = self.client.post(url, data, format='json')
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        mission_id = response.data['id']
+        
+        # Now dispatcher updates request status directly to COMPLETED
+        req_url = reverse('emergency-request-detail', kwargs={'pk': str(self.req2.id)})
+        req_data = {
+            "status": "COMPLETED"
+        }
+        response = self.client.patch(req_url, req_data, format='json')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        
+        # Verify the mission is now COMPLETED
+        mission = Mission.objects.get(id=mission_id)
+        self.assertEqual(mission.status, "COMPLETED")
+
+    def test_cannot_transition_status_to_assigned_directly(self):
+        self.client.force_authenticate(user=self.disp_user)
+        req_url = reverse('emergency-request-detail', kwargs={'pk': str(self.req2.id)})
+        req_data = {
+            "status": "ASSIGNED"
+        }
+        response = self.client.patch(req_url, req_data, format='json')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("Direct status transition to ASSIGNED or IN_PROGRESS is not allowed", response.data['detail'])
+
+    def test_cannot_transition_status_to_in_progress_directly(self):
+        self.client.force_authenticate(user=self.disp_user)
+        req_url = reverse('emergency-request-detail', kwargs={'pk': str(self.req2.id)})
+        req_data = {
+            "status": "IN_PROGRESS"
+        }
+        response = self.client.patch(req_url, req_data, format='json')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("Direct status transition to ASSIGNED or IN_PROGRESS is not allowed", response.data['detail'])
+
+    def test_cannot_assign_driver_while_on_mission(self):
+        Mission.objects.create(
+            emergency_request=self.req1,
+            ambulance=self.amb1,
+            driver=self.driver1,
+            status='ASSIGNED'
+        )
+        self.client.force_authenticate(user=self.fleet_user)
+        url = reverse('ambulance-assign-driver', kwargs={'pk': str(self.amb1.id)})
+        response = self.client.post(url, {"driver_id": None}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("Cannot change driver assignment while the ambulance is on an active mission.", response.data['non_field_errors'][0])
+
+    def test_cannot_transfer_station_while_on_mission(self):
+        Mission.objects.create(
+            emergency_request=self.req1,
+            ambulance=self.amb1,
+            driver=self.driver1,
+            status='ASSIGNED'
+        )
+        self.client.force_authenticate(user=self.fleet_user)
+        url = reverse('ambulance-transfer', kwargs={'pk': str(self.amb1.id)})
+        response = self.client.post(url, {"station_id": self.station2.id}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("Cannot transfer station while the ambulance is on an active mission.", response.data['non_field_errors'][0])
+
+    def test_cannot_change_status_while_on_mission(self):
+        Mission.objects.create(
+            emergency_request=self.req1,
+            ambulance=self.amb1,
+            driver=self.driver1,
+            status='ASSIGNED'
+        )
+        self.client.force_authenticate(user=self.fleet_user)
+        url = reverse('ambulance-change-status', kwargs={'pk': str(self.amb1.id)})
+        response = self.client.post(url, {"status": "MAINTENANCE"}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("Cannot change status while the ambulance is on an active mission.", response.data['non_field_errors'][0])
+
+    def test_cannot_edit_ambulance_details_while_on_mission(self):
+        Mission.objects.create(
+            emergency_request=self.req1,
+            ambulance=self.amb1,
+            driver=self.driver1,
+            status='ASSIGNED'
+        )
+        self.client.force_authenticate(user=self.fleet_user)
+        url = reverse('ambulance-detail', kwargs={'pk': str(self.amb1.id)})
+        response = self.client.patch(url, {"ambulance_number": "NEW-NUM"}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("Cannot modify ambulance details while it is on an active mission.", response.data['non_field_errors'][0])
+
+    def test_cannot_delete_ambulance_while_on_mission(self):
+        Mission.objects.create(
+            emergency_request=self.req1,
+            ambulance=self.amb1,
+            driver=self.driver1,
+            status='ASSIGNED'
+        )
+        self.client.force_authenticate(user=self.fleet_user)
+        url = reverse('ambulance-detail', kwargs={'pk': str(self.amb1.id)})
+        response = self.client.delete(url)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("Cannot delete ambulance while it is on an active mission.", response.data['non_field_errors'][0])
+
+
+
+
+

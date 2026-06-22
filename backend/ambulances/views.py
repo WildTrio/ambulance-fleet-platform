@@ -3,12 +3,13 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 
-from .models import Hospital, Station, Ambulance, Driver, DriverAssignment, AmbulanceOperationalHistory, Shift, Certification, EmergencyRequest
+from .models import Hospital, Station, Ambulance, Driver, DriverAssignment, AmbulanceOperationalHistory, Shift, Certification, EmergencyRequest, Mission
 from .serializers import (
     HospitalSerializer, StationSerializer, DriverSerializer,
     AmbulanceSerializer, AmbulanceOperationalHistorySerializer,
     AssignDriverSerializer, TransferStationSerializer, ChangeStatusSerializer,
-    ShiftSerializer, CertificationSerializer, EmergencyRequestSerializer
+    ShiftSerializer, CertificationSerializer, EmergencyRequestSerializer,
+    MissionSerializer
 )
 
 class AmbulancePermission(permissions.BasePermission):
@@ -25,8 +26,8 @@ class AmbulancePermission(permissions.BasePermission):
         
         user_role = request.user.role.name if request.user.role else None
 
-        # Read actions (Safe methods + history action)
-        if request.method in permissions.SAFE_METHODS or view.action == 'history':
+        # Read actions (Safe methods + history action + assign_driver action)
+        if request.method in permissions.SAFE_METHODS or view.action in ['history', 'assign_driver']:
             return user_role in ['HOSPITAL_ADMINISTRATOR', 'FLEET_MANAGER', 'DISPATCHER']
         
         # Write actions
@@ -36,6 +37,165 @@ class AmbulanceViewSet(viewsets.ModelViewSet):
     queryset = Ambulance.objects.all().order_by('ambulance_number')
     serializer_class = AmbulanceSerializer
     permission_classes = [IsAuthenticated, AmbulancePermission]
+
+    @action(detail=False, methods=['GET'], url_path='nearby')
+    def nearby(self, request):
+        latitude = request.query_params.get('latitude')
+        longitude = request.query_params.get('longitude')
+        
+        if not latitude or not longitude:
+            return Response(
+                {"detail": "latitude and longitude are required query parameters."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+            
+        try:
+            lat = float(latitude)
+            lon = float(longitude)
+        except ValueError:
+            return Response(
+                {"detail": "latitude and longitude must be valid decimal numbers."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+            
+        if lat < -90 or lat > 90:
+            return Response(
+                {"detail": "Latitude must be between -90 and 90."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+            
+        if lon < -180 or lon > 180:
+            return Response(
+                {"detail": "Longitude must be between -180 and 180."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        import math
+        from django.conf import settings
+        import urllib.request
+        import urllib.parse
+        import json
+        from concurrent.futures import ThreadPoolExecutor
+
+        def get_haversine_distance(lat1, lon1, lat2, lon2):
+            R = 6371.0 # Earth radius in km
+            lat1_r = math.radians(float(lat1))
+            lon1_r = math.radians(float(lon1))
+            lat2_r = math.radians(float(lat2))
+            lon2_r = math.radians(float(lon2))
+            dlat = lat2_r - lat1_r
+            dlon = lon2_r - lon1_r
+            a = math.sin(dlat / 2)**2 + math.cos(lat1_r) * math.cos(lat2_r) * math.sin(dlon / 2)**2
+            c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+            return R * c
+
+        def get_haversine_eta(distance_km):
+            # Speed estimate: 40 km/h
+            return round((distance_km / 40.0) * 60.0) # in minutes
+
+        api_key = getattr(settings, 'GRAPHHOPPER_API_KEY', '')
+
+        # Function to fetch road routing info for a single station from GraphHopper
+        def fetch_routing_info(station):
+            if not station:
+                return None, None
+            # If no API key, return straight-line
+            if not api_key:
+                dist = get_haversine_distance(lat, lon, station.latitude, station.longitude)
+                return dist, get_haversine_eta(dist)
+                
+            try:
+                # GraphHopper Route API endpoint
+                url = f"https://graphhopper.com/api/1/route?point={lat},{lon}&point={station.latitude},{station.longitude}&profile=car&locale=en&key={api_key}"
+                req = urllib.request.Request(
+                    url, 
+                    headers={'User-Agent': 'Lifeline-Dispatch/1.0'}
+                )
+                with urllib.request.urlopen(req, timeout=5) as response:
+                    data = json.loads(response.read().decode())
+                    if 'paths' in data and len(data['paths']) > 0:
+                        path = data['paths'][0]
+                        dist_m = path.get('distance', 0)
+                        time_ms = path.get('time', 0)
+                        dist_km = dist_m / 1000.0
+                        eta_mins = round(time_ms / 60000.0)
+                        return dist_km, eta_mins
+            except Exception:
+                pass
+                
+            # Fallback
+            dist = get_haversine_distance(lat, lon, station.latitude, station.longitude)
+            return dist, get_haversine_eta(dist)
+
+        ambulances = Ambulance.objects.all()
+        stations = [amb.station for amb in ambulances]
+        
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            routing_results = list(executor.map(fetch_routing_info, stations))
+
+        results = []
+        for i, amb in enumerate(ambulances):
+            distance, eta = routing_results[i]
+            
+            # Active driver
+            active_driver_assignment = amb.assignments.filter(end_time__isnull=True).first()
+            active_driver = None
+            if active_driver_assignment and active_driver_assignment.driver:
+                active_driver = {
+                    "id": active_driver_assignment.driver.id,
+                    "name": active_driver_assignment.driver.user.name,
+                    "license_number": active_driver_assignment.driver.license_number
+                }
+            
+            # Mission check (availability status)
+            has_active_mission = Mission.objects.filter(ambulance=amb).exclude(status__in=['COMPLETED', 'CANCELLED']).exists()
+            
+            # Calculate availability status and readiness info
+            if amb.status == 'MAINTENANCE':
+                availability_status = 'MAINTENANCE'
+                readiness_info = 'Under Maintenance'
+            elif amb.status == 'INACTIVE':
+                availability_status = 'INACTIVE'
+                readiness_info = 'Inactive'
+            elif has_active_mission:
+                availability_status = 'ON_MISSION'
+                readiness_info = 'On Mission'
+            else:
+                availability_status = 'AVAILABLE'
+                if active_driver:
+                    readiness_info = 'Ready'
+                else:
+                    readiness_info = 'No Driver'
+
+            dist_val = round(distance, 2) if distance is not None else None
+            eta_val = int(eta) if eta is not None else None
+
+            results.append({
+                "id": amb.id,
+                "ambulance_number": amb.ambulance_number,
+                "type": amb.type,
+                "status": amb.status,
+                "hospital": {
+                    "id": amb.hospital.id,
+                    "hospital_name": amb.hospital.hospital_name
+                } if amb.hospital else None,
+                "station": {
+                    "id": amb.station.id,
+                    "station_name": amb.station.station_name,
+                    "latitude": float(amb.station.latitude),
+                    "longitude": float(amb.station.longitude)
+                } if amb.station else None,
+                "distance": dist_val,
+                "eta": eta_val,
+                "availability_status": availability_status,
+                "readiness_info": readiness_info,
+                "active_driver": active_driver
+            })
+
+        # Sort: first those with distance (ascending), then those without distance
+        results.sort(key=lambda x: (x["distance"] is None, x["distance"] or 0))
+
+        return Response(results, status=status.HTTP_200_OK)
 
     def get_queryset(self):
         queryset = super().get_queryset()
@@ -51,8 +211,22 @@ class AmbulanceViewSet(viewsets.ModelViewSet):
             queryset = queryset.filter(station_id=station_filter)
         return queryset
 
+    def update(self, request, *args, **kwargs):
+        instance = self.get_object()
+        if Mission.objects.filter(ambulance=instance).exclude(status__in=['COMPLETED', 'CANCELLED']).exists():
+            return Response(
+                {"non_field_errors": ["Cannot modify ambulance details while it is on an active mission."]},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        return super().update(request, *args, **kwargs)
+
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
+        if Mission.objects.filter(ambulance=instance).exclude(status__in=['COMPLETED', 'CANCELLED']).exists():
+            return Response(
+                {"non_field_errors": ["Cannot delete ambulance while it is on an active mission."]},
+                status=status.HTTP_400_BAD_REQUEST
+            )
         if instance.status != 'INACTIVE':
             return Response(
                 {"detail": "Only inactive ambulances can be deleted."},
@@ -126,6 +300,11 @@ class AmbulanceViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['POST'], serializer_class=AssignDriverSerializer, url_path='assign-driver')
     def assign_driver(self, request, pk=None):
         ambulance = self.get_object()
+        if Mission.objects.filter(ambulance=ambulance).exclude(status__in=['COMPLETED', 'CANCELLED']).exists():
+            return Response(
+                {"non_field_errors": ["Cannot change driver assignment while the ambulance is on an active mission."]},
+                status=status.HTTP_400_BAD_REQUEST
+            )
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         
@@ -234,6 +413,11 @@ class AmbulanceViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['POST'], serializer_class=TransferStationSerializer)
     def transfer(self, request, pk=None):
         ambulance = self.get_object()
+        if Mission.objects.filter(ambulance=ambulance).exclude(status__in=['COMPLETED', 'CANCELLED']).exists():
+            return Response(
+                {"non_field_errors": ["Cannot transfer station while the ambulance is on an active mission."]},
+                status=status.HTTP_400_BAD_REQUEST
+            )
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         
@@ -266,6 +450,11 @@ class AmbulanceViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['POST'], serializer_class=ChangeStatusSerializer, url_path='change-status')
     def change_status(self, request, pk=None):
         ambulance = self.get_object()
+        if Mission.objects.filter(ambulance=ambulance).exclude(status__in=['COMPLETED', 'CANCELLED']).exists():
+            return Response(
+                {"non_field_errors": ["Cannot change status while the ambulance is on an active mission."]},
+                status=status.HTTP_400_BAD_REQUEST
+            )
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         
@@ -514,6 +703,21 @@ class EmergencyRequestViewSet(viewsets.ModelViewSet):
 
         serializer.save(**extra_kwargs)
 
+    def perform_update(self, serializer):
+        from django.db import transaction
+        with transaction.atomic():
+            instance = serializer.save()
+            if instance.status in ['CANCELLED', 'PENDING']:
+                active_missions = instance.missions.exclude(status__in=['COMPLETED', 'CANCELLED'])
+                for m in active_missions:
+                    m.status = 'CANCELLED'
+                    m.save()
+            elif instance.status == 'COMPLETED':
+                active_missions = instance.missions.exclude(status__in=['COMPLETED', 'CANCELLED'])
+                for m in active_missions:
+                    m.status = 'COMPLETED'
+                    m.save()
+
     def update(self, request, *args, **kwargs):
         instance = self.get_object()
         user = request.user
@@ -523,6 +727,14 @@ class EmergencyRequestViewSet(viewsets.ModelViewSet):
         if instance.status in ['COMPLETED', 'CANCELLED']:
             return Response(
                 {"detail": "Cannot modify an emergency request that is already COMPLETED or CANCELLED."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+            
+        # Block manual status transition to ASSIGNED or IN_PROGRESS
+        new_status = request.data.get('status')
+        if new_status in ['ASSIGNED', 'IN_PROGRESS'] and new_status != instance.status:
+            return Response(
+                {"detail": "Direct status transition to ASSIGNED or IN_PROGRESS is not allowed. Please dispatch via the Dispatch Console."},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
@@ -569,4 +781,77 @@ class EmergencyRequestViewSet(viewsets.ModelViewSet):
             {"detail": "Method not allowed. Use cancellation instead."},
             status=status.HTTP_405_METHOD_NOT_ALLOWED
         )
+
+
+class MissionPermission(permissions.BasePermission):
+    """
+    RBAC permission guard for missions:
+    - View, Create, Update: Admin, Dispatcher.
+    - Driver can update the mission status if they are the assigned driver.
+    """
+    def has_permission(self, request, view):
+        if not request.user or not request.user.is_authenticated:
+            return False
+        if request.user.is_superuser:
+            return True
+        
+        user_role = request.user.role.name if request.user.role else None
+        
+        # Dispatchers and admins can perform any action
+        if user_role in ['HOSPITAL_ADMINISTRATOR', 'DISPATCHER']:
+            return True
+            
+        # Drivers can only retrieve or update status
+        if user_role == 'DRIVER' and request.method in ['GET', 'PATCH']:
+            return True
+            
+        return False
+
+    def has_object_permission(self, request, view, obj):
+        if request.user.is_superuser:
+            return True
+            
+        user_role = request.user.role.name if request.user.role else None
+        if user_role in ['HOSPITAL_ADMINISTRATOR', 'DISPATCHER']:
+            return True
+            
+        if user_role == 'DRIVER':
+            return obj.driver.user == request.user
+            
+        return False
+
+
+class MissionViewSet(viewsets.ModelViewSet):
+    queryset = Mission.objects.all().order_by('-created_at')
+    serializer_class = MissionSerializer
+    permission_classes = [IsAuthenticated, MissionPermission]
+
+    def get_queryset(self):
+        user = self.request.user
+        if user.is_superuser:
+            queryset = Mission.objects.all()
+        else:
+            user_role = user.role.name if user.role else None
+            if user_role in ['HOSPITAL_ADMINISTRATOR', 'DISPATCHER']:
+                queryset = Mission.objects.all()
+            elif user_role == 'DRIVER':
+                queryset = Mission.objects.filter(driver__user=user)
+            else:
+                return Mission.objects.none()
+
+        active = self.request.query_params.get('active')
+        if active == 'true':
+            queryset = queryset.exclude(status__in=['COMPLETED', 'CANCELLED'])
+        return queryset
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        self.perform_create(serializer)
+        headers = self.get_success_headers(serializer.data)
+        return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+
+    def perform_create(self, serializer):
+        serializer.save()
+
 

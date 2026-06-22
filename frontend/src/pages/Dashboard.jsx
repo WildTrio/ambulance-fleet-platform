@@ -4,6 +4,7 @@ import './Dashboard.css';
 import Ambulances from './Ambulances';
 import Drivers from './Drivers';
 import EmergencyRequests from './EmergencyRequests';
+import DispatchConsole from './DispatchConsole';
 
 const Dashboard = () => {
   const { user, logout, changePassword } = useAuth();
@@ -56,6 +57,7 @@ const Dashboard = () => {
   const showEmergencyQueueTab = ['HOSPITAL_ADMINISTRATOR', 'DISPATCHER'].includes(userRole);
   const showEmergencyRequestorTab = ['EMERGENCY_REQUESTOR'].includes(userRole);
   const showAmbulanceTab = ['HOSPITAL_ADMINISTRATOR', 'FLEET_MANAGER', 'DISPATCHER'].includes(userRole);
+  const showDispatchConsoleTab = ['HOSPITAL_ADMINISTRATOR', 'DISPATCHER'].includes(userRole);
 
   return (
     <div className="dashboard-container">
@@ -93,6 +95,14 @@ const Dashboard = () => {
                 onClick={() => setActiveTab('emergency-queue')}
               >
                 🚨 Emergency Queue
+              </button>
+            )}
+            {showDispatchConsoleTab && (
+              <button 
+                className={`tab-btn ${activeTab === 'dispatch-console' ? 'active' : ''}`}
+                onClick={() => setActiveTab('dispatch-console')}
+              >
+                🖥️ Dispatch Console
               </button>
             )}
             {showEmergencyRequestorTab && (
@@ -215,6 +225,7 @@ const Dashboard = () => {
         {activeTab === 'ambulances' && <Ambulances />}
         {activeTab === 'drivers' && <Drivers />}
         {(activeTab === 'emergency-queue' || activeTab === 'emergency-requests') && <EmergencyRequests />}
+        {activeTab === 'dispatch-console' && <DispatchConsole />}
       </main>
     </div>
   );

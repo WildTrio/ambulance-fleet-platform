@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Hospital, Station, Ambulance, Driver, DriverAssignment, AmbulanceOperationalHistory, Shift, Certification, EmergencyRequest
+from .models import Hospital, Station, Ambulance, Driver, DriverAssignment, AmbulanceOperationalHistory, Shift, Certification, EmergencyRequest, Mission
 from authentication.serializers import UserSerializer
 
 class HospitalSerializer(serializers.ModelSerializer):
@@ -151,12 +151,13 @@ class AmbulanceSerializer(serializers.ModelSerializer):
     hospital = HospitalSerializer(read_only=True)
     station = StationSerializer(read_only=True)
     active_driver = serializers.SerializerMethodField()
+    active_mission = serializers.SerializerMethodField()
 
     class Meta:
         model = Ambulance
         fields = [
             'id', 'ambulance_number', 'hospital_id', 'hospital',
-            'station_id', 'station', 'type', 'status', 'active_driver'
+            'station_id', 'station', 'type', 'status', 'active_driver', 'active_mission'
         ]
 
     def get_active_driver(self, obj):
@@ -167,6 +168,17 @@ class AmbulanceSerializer(serializers.ModelSerializer):
                 'id': driver.id,
                 'name': driver.user.name,
                 'license_number': driver.license_number
+            }
+        return None
+
+    def get_active_mission(self, obj):
+        from .models import Mission
+        mission = obj.missions.exclude(status__in=['COMPLETED', 'CANCELLED']).first()
+        if mission:
+            return {
+                'id': mission.id,
+                'status': mission.status,
+                'emergency_type': mission.emergency_request.emergency_type
             }
         return None
 
@@ -220,4 +232,182 @@ class EmergencyRequestSerializer(serializers.ModelSerializer):
         if value < -180 or value > 180:
             raise serializers.ValidationError("Longitude must be between -180 and 180.")
         return value
+
+
+class MissionSerializer(serializers.ModelSerializer):
+    emergency_request_id = serializers.UUIDField(write_only=True, required=False)
+    ambulance_id = serializers.UUIDField(write_only=True, required=False)
+    driver_id = serializers.UUIDField(write_only=True, required=False, allow_null=True)
+    
+    emergency_request = EmergencyRequestSerializer(read_only=True)
+    ambulance = AmbulanceSerializer(read_only=True)
+    driver = DriverSerializer(read_only=True)
+
+    class Meta:
+        model = Mission
+        fields = [
+            'id', 'emergency_request_id', 'emergency_request',
+            'ambulance_id', 'ambulance', 'driver_id', 'driver',
+            'status', 'created_at', 'updated_at'
+        ]
+        read_only_fields = ['id', 'created_at', 'updated_at']
+
+    def validate_status(self, value):
+        if self.instance and self.instance.status in ['COMPLETED', 'CANCELLED']:
+            raise serializers.ValidationError("Cannot update a completed or cancelled mission.")
+        valid_statuses = [choice[0] for choice in Mission.MISSION_STATUS_CHOICES]
+        if value not in valid_statuses:
+            raise serializers.ValidationError(f"Invalid status. Must be one of {valid_statuses}")
+        return value
+
+    def validate(self, data):
+        if not self.instance:
+            # POST request - creation
+            if 'emergency_request_id' not in data:
+                raise serializers.ValidationError({"emergency_request_id": "This field is required."})
+            if 'ambulance_id' not in data:
+                raise serializers.ValidationError({"ambulance_id": "This field is required."})
+
+            # Validate emergency request
+            req_id = data.get('emergency_request_id')
+            try:
+                req = EmergencyRequest.objects.get(id=req_id)
+            except EmergencyRequest.DoesNotExist:
+                raise serializers.ValidationError({"emergency_request_id": "Emergency request not found."})
+            
+            if req.status != 'PENDING':
+                raise serializers.ValidationError({"emergency_request_id": "Only pending emergency requests can be dispatched."})
+                
+            # Validate ambulance
+            amb_id = data.get('ambulance_id')
+            try:
+                amb = Ambulance.objects.get(id=amb_id)
+            except Ambulance.DoesNotExist:
+                raise serializers.ValidationError({"ambulance_id": "Ambulance not found."})
+                
+            if amb.status != 'ACTIVE':
+                raise serializers.ValidationError({"ambulance_id": "Only active ambulances can be dispatched."})
+                
+            # Check if ambulance is already on an active mission
+            if Mission.objects.filter(ambulance=amb).exclude(status__in=['COMPLETED', 'CANCELLED']).exists():
+                raise serializers.ValidationError({"ambulance_id": "This ambulance is already assigned to an active mission."})
+                
+            # Driver assignment check
+            driver_id = data.get('driver_id')
+            active_driver = amb.assignments.filter(end_time__isnull=True).first()
+            
+            if driver_id:
+                # We are assigning a driver to this ambulance on the fly
+                try:
+                    drv = Driver.objects.get(id=driver_id)
+                except Driver.DoesNotExist:
+                    raise serializers.ValidationError({"driver_id": "Driver not found."})
+                    
+                if not drv.availability and (not active_driver or active_driver.driver != drv):
+                    raise serializers.ValidationError({"driver_id": "Driver is not available."})
+                data['driver_instance'] = drv
+            else:
+                # Ambulance must already have an active driver
+                if not active_driver:
+                    raise serializers.ValidationError({"ambulance_id": "Ambulance does not have a driver assigned."})
+                data['driver_instance'] = active_driver.driver
+                
+            # Store models for saving
+            data['req_instance'] = req
+            data['amb_instance'] = amb
+        else:
+            # PATCH request - update
+            if 'status' not in data:
+                raise serializers.ValidationError({"status": "Status field is required for updates."})
+        return data
+
+    def create(self, validated_data):
+        from django.db import transaction
+        from django.utils import timezone
+        
+        req = validated_data['req_instance']
+        amb = validated_data['amb_instance']
+        driver = validated_data['driver_instance']
+        driver_id = validated_data.get('driver_id')
+        
+        with transaction.atomic():
+            # If driver_id was provided, perform driver assignment to ambulance
+            if driver_id:
+                # 1. Close driver's active assignments elsewhere
+                DriverAssignment.objects.filter(driver=driver, end_time__isnull=True).exclude(ambulance=amb).update(end_time=timezone.now())
+                
+                # 2. Close current active driver assignment on this ambulance
+                current_assignment = amb.assignments.filter(end_time__isnull=True).first()
+                if current_assignment and current_assignment.driver != driver:
+                    current_assignment.end_time = timezone.now()
+                    current_assignment.save()
+                    current_assignment.driver.availability = True
+                    current_assignment.driver.save()
+                    
+                    AmbulanceOperationalHistory.objects.create(
+                        ambulance=amb,
+                        event_type='DRIVER_UNASSIGNMENT',
+                        old_value=current_assignment.driver.user.name,
+                        new_value=None,
+                        remarks="Replaced on dispatch."
+                    )
+                
+                # 3. Create driver assignment
+                if not current_assignment or current_assignment.driver != driver:
+                    DriverAssignment.objects.create(driver=driver, ambulance=amb)
+                    driver.availability = False
+                    driver.save()
+                    
+                    AmbulanceOperationalHistory.objects.create(
+                        ambulance=amb,
+                        event_type='DRIVER_ASSIGNMENT',
+                        old_value=None,
+                        new_value=driver.user.name,
+                        remarks="Assigned on dispatch."
+                    )
+            
+            # Create Mission
+            mission = Mission.objects.create(
+                emergency_request=req,
+                ambulance=amb,
+                driver=driver,
+                status='ASSIGNED'
+            )
+            
+            # Update EmergencyRequest status to ASSIGNED
+            req.status = 'ASSIGNED'
+            req.save()
+            
+            return mission
+
+    def update(self, instance, validated_data):
+        from django.db import transaction
+        
+        new_status = validated_data.get('status', instance.status)
+        old_status = instance.status
+        
+        if old_status == new_status:
+            return instance
+            
+        with transaction.atomic():
+            instance.status = new_status
+            instance.save()
+            
+            req = instance.emergency_request
+            
+            # Align EmergencyRequest status
+            if new_status == 'COMPLETED':
+                req.status = 'COMPLETED'
+                req.save()
+            elif new_status == 'CANCELLED':
+                # Revert to PENDING so it can be dispatched again
+                req.status = 'PENDING'
+                req.save()
+            else:
+                # EN_ROUTE, ON_SITE, TRANSPORTING, ARRIVED_HOSPITAL
+                req.status = 'IN_PROGRESS'
+                req.save()
+                
+        return instance
+
 

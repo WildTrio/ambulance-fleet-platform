@@ -183,3 +183,7 @@ STATIC_URL = 'static/'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
+# GraphHopper API Configuration
+GRAPHHOPPER_API_KEY = os.environ.get('GRAPHHOPPER_API_KEY', '66c3e375-edff-4668-bcda-d628b94e2fc1')
+
+

@@ -255,10 +255,12 @@ const EmergencyRequests = () => {
                 <select
                   value={req.status}
                   onChange={(e) => handleUpdateStatus(req.id, e.target.value)}
+                  disabled={['ASSIGNED', 'IN_PROGRESS'].includes(req.status)}
+                  title={['ASSIGNED', 'IN_PROGRESS'].includes(req.status) ? "This request has an active mission. Update status via the Dispatch Console." : ""}
                 >
                   <option value="PENDING">Pending</option>
-                  <option value="ASSIGNED">Assigned</option>
-                  <option value="IN_PROGRESS">In Progress</option>
+                  {req.status === 'ASSIGNED' && <option value="ASSIGNED">Assigned</option>}
+                  {req.status === 'IN_PROGRESS' && <option value="IN_PROGRESS">In Progress</option>}
                   <option value="COMPLETED">Completed</option>
                   <option value="CANCELLED">Cancelled</option>
                 </select>

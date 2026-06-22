@@ -225,6 +225,19 @@
 .badge-active { background: rgba(72, 187, 120, 0.2); color: #48bb78; }
 .badge-maintenance { background: rgba(237, 137, 54, 0.2); color: #ed8936; }
 .badge-inactive { background: rgba(113, 128, 150, 0.2); color: #cbd5e0; }
+.badge-mission {
+  background: rgba(229, 62, 109, 0.2);
+  color: #e53e6d;
+  border: 1px solid rgba(229, 62, 109, 0.4);
+}
+.badge-mission-pulse {
+  animation: pulse-mission 2s infinite ease-in-out;
+}
+@keyframes pulse-mission {
+  0% { opacity: 0.8; }
+  50% { opacity: 1; transform: scale(1.02); }
+  100% { opacity: 0.8; }
+}
 
 .card-body {
   display: flex;
@@ -294,6 +307,21 @@
 .btn-danger:hover {
   background: rgba(229, 62, 62, 0.3);
   color: #fff;
+}
+
+.btn-action:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  background: rgba(255, 255, 255, 0.03) !important;
+  color: #718096 !important;
+  border: 1px solid rgba(255, 255, 255, 0.05) !important;
+}
+
+.btn-action:disabled:hover {
+  background: rgba(255, 255, 255, 0.03) !important;
+  color: #718096 !important;
+  box-shadow: none !important;
+  transform: none !important;
 }
 
 /* Loading & Empty placeholders */
