@@ -47,6 +47,12 @@ A secure, role-restricted web platform for managing hospital ambulance fleets, d
 * **Safety Lock on Closed Cases**: Implemented backend-level validations preventing any modifications once a request transitions to Completed or Cancelled.
 * **RBAC Controls**: Allows dispatchers/admins to manage the entire queue and adjust priority/status, while citizens can submit, track, and cancel their own requests.
 
+### Phase 5: Dispatch Console & Mission Management
+* **Centralized Dispatch Dashboard**: Real-time interface for dispatchers and administrators to monitor ongoing emergency requests and dispatch missions.
+* **Proximity Calculation with API Fallback**: Queries GraphHopper Routing API in parallel threads to calculate real driving distance/ETA to the incident, falling back dynamically to Haversine straight-line calculation if GraphHopper is offline.
+* **Mission Lifecycle Engine**: Track missions through states (`ASSIGNED` -> `EN_ROUTE` -> `ON_SITE` -> `TRANSPORTING` -> `ARRIVED_HOSPITAL` -> `COMPLETED`/`CANCELLED`), automatically updating the corresponding Emergency Request status in sync.
+* **Operational Safety Locks**: Strict backend/frontend validations preventing administrative updates, deletion, or station transfers on any vehicle actively engaged in a mission.
+
 ### Phase 6: Reverse Ambulance Search Engine & Equipment Availability
 * **Intelligent Recommendation Engine**: Ranks active and unoccupied ambulances on a 0–100 score basis:
   * **Distance Score (Max 50 pts)**: Calculates distance to request location using an Exponential Decay model ($$50.0 \times e^{-\frac{\text{distance}}{15.0}}$$) to naturally bound and smooth scores.
