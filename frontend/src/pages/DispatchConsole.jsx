@@ -77,7 +77,47 @@ const DispatchConsole = () => {
     return () => clearInterval(interval);
   }, [isAuthorized]);
 
-  // Handle selected request change to search nearby ambulances
+  // Recommendation Engine States
+  const [useRecommendation, setUseRecommendation] = useState(true);
+  const [maxDistance, setMaxDistance] = useState('');
+  const [selectedType, setSelectedType] = useState('');
+  const [onlyWithDriver, setOnlyWithDriver] = useState(false);
+  const [requiredEquipment, setRequiredEquipment] = useState('');
+
+  const fetchNearbyAmbulances = async () => {
+    if (!selectedRequest) return;
+    setLoadingNearby(true);
+    setDispatchError('');
+    try {
+      let endpoint = `/ambulances/nearby/?latitude=${selectedRequest.latitude}&longitude=${selectedRequest.longitude}`;
+      
+      if (useRecommendation) {
+        endpoint = `/ambulances/recommend/?latitude=${selectedRequest.latitude}&longitude=${selectedRequest.longitude}`;
+        if (maxDistance) {
+          endpoint += `&max_distance=${maxDistance}`;
+        }
+        if (selectedType) {
+          endpoint += `&type=${encodeURIComponent(selectedType)}`;
+        }
+        if (onlyWithDriver) {
+          endpoint += `&has_driver=true`;
+        }
+        if (requiredEquipment) {
+          endpoint += `&required_equipment=${encodeURIComponent(requiredEquipment)}`;
+        }
+      }
+      
+      const response = await api.get(endpoint);
+      setNearbyAmbulances(response.data);
+    } catch (err) {
+      console.error("Error fetching recommended ambulances:", err);
+      setDispatchError("Could not calculate ambulance recommendations.");
+    } finally {
+      setLoadingNearby(false);
+    }
+  };
+
+  // Handle selected request change to search nearby/recommended ambulances
   useEffect(() => {
     if (!selectedRequest) {
       setNearbyAmbulances([]);
@@ -85,28 +125,10 @@ const DispatchConsole = () => {
       setSelectedDriverId('');
       return;
     }
-
-    const fetchNearby = async () => {
-      setLoadingNearby(true);
-      setDispatchError('');
-      setDispatchSuccess('');
-      try {
-        const response = await api.get(
-          `/ambulances/nearby/?latitude=${selectedRequest.latitude}&longitude=${selectedRequest.longitude}`
-        );
-        setNearbyAmbulances(response.data);
-      } catch (err) {
-        console.error("Error fetching nearby ambulances:", err);
-        setDispatchError("Could not calculate ambulance distances.");
-      } finally {
-        setLoadingNearby(false);
-      }
-    };
-
-    fetchNearby();
+    fetchNearbyAmbulances();
     setSelectedAmbulance(null);
     setSelectedDriverId('');
-  }, [selectedRequest]);
+  }, [selectedRequest, useRecommendation, maxDistance, selectedType, onlyWithDriver, requiredEquipment]);
 
   // Reset selected driver when the selected ambulance changes
   useEffect(() => {
@@ -177,11 +199,25 @@ const DispatchConsole = () => {
       // Re-fetch available drivers
       fetchAvailableDrivers();
 
-      // Refresh nearby ambulances to get the updated status and active driver
+      // Refresh nearby/recommended list to get the updated status and active driver
       if (selectedRequest) {
-        const response = await api.get(
-          `/ambulances/nearby/?latitude=${selectedRequest.latitude}&longitude=${selectedRequest.longitude}`
-        );
+        let endpoint = `/ambulances/nearby/?latitude=${selectedRequest.latitude}&longitude=${selectedRequest.longitude}`;
+        if (useRecommendation) {
+          endpoint = `/ambulances/recommend/?latitude=${selectedRequest.latitude}&longitude=${selectedRequest.longitude}`;
+          if (maxDistance) {
+            endpoint += `&max_distance=${maxDistance}`;
+          }
+          if (selectedType) {
+            endpoint += `&type=${encodeURIComponent(selectedType)}`;
+          }
+          if (onlyWithDriver) {
+            endpoint += `&has_driver=true`;
+          }
+          if (requiredEquipment) {
+            endpoint += `&required_equipment=${encodeURIComponent(requiredEquipment)}`;
+          }
+        }
+        const response = await api.get(endpoint);
         setNearbyAmbulances(response.data);
 
         // Find the updated selected ambulance from response
@@ -291,7 +327,7 @@ const DispatchConsole = () => {
           <div className="panel-header">
             <h3>Dispatch Incident Command</h3>
           </div>
-          <div className="panel-content">
+          <div className="panel-content scrollable">
             {!selectedRequest ? (
               <div className="command-empty-state">
                 <span className="empty-icon">🚨</span>
@@ -330,14 +366,80 @@ const DispatchConsole = () => {
                 {/* nearby ambulances */}
                 <div className="nearby-ambulances-box">
                   <div className="nearby-header">
-                    <h4>Allocate Ambulance (Sorted by distance)</h4>
+                    <h4>Allocate Ambulance {useRecommendation ? "(Ranked by Recommendation)" : "(Sorted by Distance)"}</h4>
                     {loadingNearby && <div className="spinner-mini"></div>}
+                  </div>
+
+                  {/* Recommendation Engine Filter Bar */}
+                  <div className="recommendation-filter-bar">
+                    <div className="filter-checkbox-group">
+                      <label className="checkbox-label" title="Enable/disable the intelligent recommendation engine">
+                        <input
+                          type="checkbox"
+                          checked={useRecommendation}
+                          onChange={(e) => setUseRecommendation(e.target.checked)}
+                        />
+                        <strong>Use Intelligent Recommendation Engine</strong>
+                      </label>
+                    </div>
+
+                    {useRecommendation && (
+                      <div className="recommendation-filters">
+                        <div className="filter-item">
+                          <label>Max Dist (km):</label>
+                          <input
+                            type="number"
+                            placeholder="e.g. 15"
+                            value={maxDistance}
+                            onChange={(e) => setMaxDistance(e.target.value)}
+                            className="filter-input-small"
+                            min="0"
+                          />
+                        </div>
+
+                        <div className="filter-item">
+                          <label>Type:</label>
+                          <select
+                            value={selectedType}
+                            onChange={(e) => setSelectedType(e.target.value)}
+                            className="filter-select-small"
+                          >
+                            <option value="">All Types</option>
+                            <option value="Basic Life Support">Basic Life Support</option>
+                            <option value="Advanced Life Support">Advanced Life Support</option>
+                            <option value="Patient Transport">Patient Transport</option>
+                          </select>
+                        </div>
+
+                        <div className="filter-item">
+                          <label className="checkbox-label">
+                            <input
+                              type="checkbox"
+                              checked={onlyWithDriver}
+                              onChange={(e) => setOnlyWithDriver(e.target.checked)}
+                            />
+                            Driver Assigned
+                          </label>
+                        </div>
+
+                        <div className="filter-item">
+                          <label>Equipment:</label>
+                          <input
+                            type="text"
+                            placeholder="e.g. Ventilator"
+                            value={requiredEquipment}
+                            onChange={(e) => setRequiredEquipment(e.target.value)}
+                            className="filter-input-medium"
+                          />
+                        </div>
+                      </div>
+                    )}
                   </div>
                   
                   {loadingNearby && nearbyAmbulances.length === 0 ? (
                     <div className="panel-spinner-wrap"><div className="panel-spinner"></div></div>
                   ) : nearbyAmbulances.length === 0 ? (
-                    <p className="no-vehicles">No vehicles with station coordinates found.</p>
+                    <p className="no-vehicles">No available vehicles matching parameters found.</p>
                   ) : (
                     <div className="vehicles-grid">
                       {nearbyAmbulances.map((amb) => {
@@ -362,20 +464,56 @@ const DispatchConsole = () => {
                           >
                             <div className="veh-card-header">
                               <span className="veh-num">🚑 {amb.ambulance_number}</span>
-                              <span className="veh-type">{amb.type}</span>
+                              
+                              {useRecommendation && amb.recommendation_score !== undefined && (
+                                <span className="score-badge" title={`Base driver score: ${amb.score_breakdown?.base_driver_score} pts\nDistance penalty: -${amb.score_breakdown?.distance_penalty} pts\nEquipment score: +${amb.score_breakdown?.equipment_score} pts`}>
+                                  Score: <strong>{amb.recommendation_score}</strong>
+                                </span>
+                              )}
                             </div>
                             
                             <div className="veh-card-body">
                               <div className="veh-details-line">
-                                <span>Station: <strong>{amb.station?.station_name || 'N/A'}</strong></span>
+                                <span className="veh-type-badge">⚙️ {amb.type}</span>
                                 <span className={`status-pill ${readinessClass}`}>
                                   {amb.readiness_info}
                                 </span>
                               </div>
+                              
                               <div className="veh-details-line">
-                                <span>Driving Dist: <strong className="text-indigo">{amb.distance !== null ? `${amb.distance} km` : 'N/A'}</strong></span>
-                                <span>Est. ETA: <strong className="text-indigo">{amb.eta !== null ? `${amb.eta} mins` : 'N/A'}</strong></span>
+                                <span className="station-name-text">Station: <strong>{amb.station?.station_name || 'N/A'}</strong></span>
                               </div>
+                              
+                              <div className="veh-details-line">
+                                <span>Dist: <strong className="text-indigo">{amb.distance !== null ? `${amb.distance} km` : 'N/A'}</strong></span>
+                                <span>ETA: <strong className="text-indigo">{amb.eta !== null ? `${amb.eta} mins` : 'N/A'}</strong></span>
+                              </div>
+                              
+                              {useRecommendation && amb.score_breakdown && (
+                                <div className="score-breakdown-inline">
+                                  <div className="breakdown-row">
+                                    <span>Driver Score:</span>
+                                    <strong>{amb.score_breakdown.base_driver_score} pts</strong>
+                                  </div>
+                                  <div className="breakdown-row">
+                                    <span>Distance Penalty:</span>
+                                    <strong className="text-red">-{Number(amb.score_breakdown.distance_penalty).toFixed(1)} pts</strong>
+                                  </div>
+                                  <div className="breakdown-row">
+                                    <span>Equipment Score:</span>
+                                    <strong className="text-green">+{Number(amb.score_breakdown.equipment_score).toFixed(1)} pts</strong>
+                                  </div>
+                                </div>
+                              )}
+                              
+                              {amb.equipment && amb.equipment.length > 0 && (
+                                <div className="veh-details-line veh-equipment-line">
+                                  <span className="equipment-list-text">
+                                    🔧 {amb.equipment.join(', ')}
+                                  </span>
+                                </div>
+                              )}
+                              
                               <div className="veh-details-line veh-driver-line">
                                 <span>Driver: <strong>{amb.active_driver ? amb.active_driver.name : 'None Assigned'}</strong></span>
                               </div>

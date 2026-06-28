@@ -383,18 +383,12 @@
 }
 
 .vehicles-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
+  display: flex;
+  flex-direction: column;
   gap: 12px;
-  max-height: 280px;
+  max-height: 350px;
   overflow-y: auto;
   padding-right: 4px;
-}
-
-@media (max-width: 640px) {
-  .vehicles-grid {
-    grid-template-columns: 1fr;
-  }
 }
 
 .vehicle-row-card {
@@ -429,20 +423,28 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  padding-bottom: 6px;
+  margin-bottom: 2px;
 }
 
 .veh-num {
   font-weight: 700;
-  font-size: 0.9rem;
+  font-size: 0.95rem;
   color: #ffffff;
 }
 
-.veh-type {
+.veh-type-badge {
   font-size: 0.72rem;
-  color: #94a3b8;
-  background: rgba(255, 255, 255, 0.05);
-  padding: 2px 6px;
+  color: #cbd5e1;
+  background: rgba(255, 255, 255, 0.06);
+  padding: 2px 8px;
   border-radius: 4px;
+  display: inline-block;
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .veh-card-body {
@@ -733,3 +735,171 @@
   50% { box-shadow: 0 0 15px rgba(234, 179, 8, 0.35); border-color: rgba(234, 179, 8, 0.5); }
   100% { box-shadow: 0 0 5px rgba(234, 179, 8, 0.15); border-color: rgba(234, 179, 8, 0.2); }
 }
+
+/* Recommendation Search & Filter styles */
+.recommendation-filter-bar {
+  background: rgba(15, 23, 42, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 12px;
+  padding: 12px 14px;
+  margin-bottom: 4px;
+}
+
+.filter-checkbox-group {
+  display: flex;
+  align-items: center;
+}
+
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.82rem;
+  color: #cbd5e1;
+  cursor: pointer;
+  user-select: none;
+}
+
+.checkbox-label input[type="checkbox"] {
+  accent-color: #6366f1;
+  width: 14px;
+  height: 14px;
+  cursor: pointer;
+}
+
+.recommendation-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.filter-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.76rem;
+  color: #94a3b8;
+}
+
+.filter-input-small {
+  background: #0d1527;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  padding: 4px 8px;
+  color: #f1f5f9;
+  font-size: 0.76rem;
+  width: 70px;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.filter-input-small:focus {
+  border-color: #6366f1;
+}
+
+.filter-select-small {
+  background: #0d1527;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  padding: 4px 6px;
+  color: #f1f5f9;
+  font-size: 0.76rem;
+  outline: none;
+  transition: border-color 0.2s;
+  cursor: pointer;
+}
+
+.filter-select-small:focus {
+  border-color: #6366f1;
+}
+
+/* Recommendation Score Tooltip */
+.score-badge-wrap {
+  position: relative;
+  display: inline-block;
+}
+
+.score-badge {
+  background: rgba(99, 102, 241, 0.1);
+  color: #818cf8;
+  border: 1px solid rgba(99, 102, 241, 0.2);
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  cursor: help;
+  transition: all 0.2s;
+}
+
+.score-badge:hover {
+  background: rgba(99, 102, 241, 0.2);
+  border-color: rgba(99, 102, 241, 0.4);
+}
+
+.score-badge strong {
+  color: #ffffff;
+}
+
+.score-breakdown-inline {
+  margin-top: 6px;
+  font-size: 0.72rem;
+  color: #94a3b8;
+  border-top: 1px dashed rgba(255, 255, 255, 0.08);
+  padding-top: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.breakdown-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+}
+
+.breakdown-row span {
+  color: #94a3b8;
+}
+
+.breakdown-row strong {
+  color: #cbd5e1;
+}
+
+.filter-input-medium {
+  background: #0d1527;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  padding: 4px 8px;
+  color: #f1f5f9;
+  font-size: 0.76rem;
+  width: 150px;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.filter-input-medium:focus {
+  border-color: #6366f1;
+}
+
+.veh-equipment-line {
+  margin-top: 6px;
+  font-size: 0.74rem;
+  color: #818cf8;
+  background: rgba(99, 102, 241, 0.05);
+  border: 1px solid rgba(99, 102, 241, 0.1);
+  padding: 4px 8px;
+  border-radius: 6px;
+  display: flex !important;
+  align-items: center;
+  gap: 4px;
+}
+
+.equipment-list-text {
+  font-weight: 500;
+}
+
+

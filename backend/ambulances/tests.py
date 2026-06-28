@@ -464,6 +464,47 @@ class DriverManagementAPITests(APITestCase):
         ).exists()
         self.assertTrue(unassign_log)
 
+    def test_cannot_make_driver_available_while_on_mission(self):
+        # 1. Create hospital, station, ambulance
+        hospital = Hospital.objects.create(hospital_name="City Hospital", address="123 Road", city="City", state="ST", contact_number="123")
+        station = Station.objects.create(hospital=hospital, station_name="Station A", latitude=40.7, longitude=-74.0)
+        ambulance = Ambulance.objects.create(ambulance_number="AMB-D1", hospital=hospital, station=station, status="ACTIVE")
+        
+        # 2. Assign driver to ambulance (sets availability to False)
+        DriverAssignment.objects.create(driver=self.driver, ambulance=ambulance)
+        self.driver.availability = False
+        self.driver.save()
+
+        # 3. Create active mission for driver and ambulance
+        citizen_role = Role.objects.get_or_create(name='EMERGENCY_REQUESTOR')[0]
+        citizen_user = User.objects.create_user(email='citizen_test@g.com', name='Citizen', password='Password123!', role=citizen_role)
+        req = EmergencyRequest.objects.create(
+            requester_name="Patient A", contact_number="555-9999", emergency_type="Stroke",
+            priority="CRITICAL", pickup_location="789 Market St", latitude=40.7, longitude=-74.0,
+            status="ASSIGNED", created_by=citizen_user
+        )
+        Mission.objects.create(
+            emergency_request=req,
+            ambulance=ambulance,
+            driver=self.driver,
+            status='ASSIGNED'
+        )
+
+        # 4. Attempt manual driver PATCH update to set availability = True
+        url = reverse('driver-detail', kwargs={'pk': self.driver.pk})
+        data = {
+            "name": self.driver.user.name,
+            "email": self.driver.user.email,
+            "contact": self.driver.contact,
+            "license_number": self.driver.license_number,
+            "availability": True
+        }
+        self.client.force_authenticate(user=self.admin_user)
+        response = self.client.patch(url, data, format='json')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("availability", response.data)
+        self.assertEqual(response.data["availability"][0], "Cannot mark driver as available while they are on an active mission.")
+
     def test_delete_driver_cascade(self):
         from django.utils import timezone
         

@@ -69,6 +69,28 @@ class EmergencyRequestAPITests(APITestCase):
         self.assertEqual(req.status, "PENDING")
         self.assertEqual(req.created_by, self.dispatcher_user)
 
+    def test_create_emergency_request_admin(self):
+        url = reverse('emergency-request-list')
+        data = {
+            "requester_name": "John Admin-Logged",
+            "contact_number": "555-0103",
+            "emergency_type": "Trauma/Bleeding",
+            "pickup_location": "789 Pine St",
+            "latitude": 34.0522,
+            "longitude": -118.2437,
+            "priority": "HIGH"
+        }
+
+        self.client.force_authenticate(user=self.admin_user)
+        response = self.client.post(url, data, format='json')
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+        # Verify admin can set custom priority
+        req = EmergencyRequest.objects.get(id=response.data['id'])
+        self.assertEqual(req.priority, "HIGH")
+        self.assertEqual(req.status, "PENDING")
+        self.assertEqual(req.created_by, self.admin_user)
+
     def test_create_validation_errors(self):
         url = reverse('emergency-request-list')
         # Missing fields

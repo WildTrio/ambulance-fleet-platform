@@ -1,15 +1,26 @@
+import math
+import json
+import urllib.request
+import urllib.parse
+from concurrent.futures import ThreadPoolExecutor
+
+from django.conf import settings
+from django.db import transaction
+from django.db.models import Case, When, Value, IntegerField
+from django.utils import timezone
+
 from rest_framework import viewsets, status, permissions
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 
-from .models import Hospital, Station, Ambulance, Driver, DriverAssignment, AmbulanceOperationalHistory, Shift, Certification, EmergencyRequest, Mission
+from .models import Hospital, Station, Ambulance, Driver, DriverAssignment, AmbulanceOperationalHistory, Shift, Certification, EmergencyRequest, Mission, Equipment
 from .serializers import (
     HospitalSerializer, StationSerializer, DriverSerializer,
     AmbulanceSerializer, AmbulanceOperationalHistorySerializer,
     AssignDriverSerializer, TransferStationSerializer, ChangeStatusSerializer,
     ShiftSerializer, CertificationSerializer, EmergencyRequestSerializer,
-    MissionSerializer
+    MissionSerializer, EquipmentSerializer
 )
 
 class AmbulancePermission(permissions.BasePermission):
@@ -70,68 +81,8 @@ class AmbulanceViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        import math
-        from django.conf import settings
-        import urllib.request
-        import urllib.parse
-        import json
-        from concurrent.futures import ThreadPoolExecutor
-
-        def get_haversine_distance(lat1, lon1, lat2, lon2):
-            R = 6371.0 # Earth radius in km
-            lat1_r = math.radians(float(lat1))
-            lon1_r = math.radians(float(lon1))
-            lat2_r = math.radians(float(lat2))
-            lon2_r = math.radians(float(lon2))
-            dlat = lat2_r - lat1_r
-            dlon = lon2_r - lon1_r
-            a = math.sin(dlat / 2)**2 + math.cos(lat1_r) * math.cos(lat2_r) * math.sin(dlon / 2)**2
-            c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
-            return R * c
-
-        def get_haversine_eta(distance_km):
-            # Speed estimate: 40 km/h
-            return round((distance_km / 40.0) * 60.0) # in minutes
-
-        api_key = getattr(settings, 'GRAPHHOPPER_API_KEY', '')
-
-        # Function to fetch road routing info for a single station from GraphHopper
-        def fetch_routing_info(station):
-            if not station:
-                return None, None
-            # If no API key, return straight-line
-            if not api_key:
-                dist = get_haversine_distance(lat, lon, station.latitude, station.longitude)
-                return dist, get_haversine_eta(dist)
-                
-            try:
-                # GraphHopper Route API endpoint
-                url = f"https://graphhopper.com/api/1/route?point={lat},{lon}&point={station.latitude},{station.longitude}&profile=car&locale=en&key={api_key}"
-                req = urllib.request.Request(
-                    url, 
-                    headers={'User-Agent': 'Lifeline-Dispatch/1.0'}
-                )
-                with urllib.request.urlopen(req, timeout=5) as response:
-                    data = json.loads(response.read().decode())
-                    if 'paths' in data and len(data['paths']) > 0:
-                        path = data['paths'][0]
-                        dist_m = path.get('distance', 0)
-                        time_ms = path.get('time', 0)
-                        dist_km = dist_m / 1000.0
-                        eta_mins = round(time_ms / 60000.0)
-                        return dist_km, eta_mins
-            except Exception:
-                pass
-                
-            # Fallback
-            dist = get_haversine_distance(lat, lon, station.latitude, station.longitude)
-            return dist, get_haversine_eta(dist)
-
         ambulances = Ambulance.objects.all()
-        stations = [amb.station for amb in ambulances]
-        
-        with ThreadPoolExecutor(max_workers=10) as executor:
-            routing_results = list(executor.map(fetch_routing_info, stations))
+        routing_results = self._get_ambulances_with_distances(lat, lon, ambulances)
 
         results = []
         for i, amb in enumerate(ambulances):
@@ -197,6 +148,162 @@ class AmbulanceViewSet(viewsets.ModelViewSet):
 
         return Response(results, status=status.HTTP_200_OK)
 
+    @action(detail=False, methods=['GET'], url_path='recommend')
+    def recommend(self, request):
+        latitude = request.query_params.get('latitude')
+        longitude = request.query_params.get('longitude')
+        
+        if not latitude or not longitude:
+            return Response(
+                {"detail": "latitude and longitude are required query parameters."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+            
+        try:
+            lat = float(latitude)
+            lon = float(longitude)
+        except ValueError:
+            return Response(
+                {"detail": "latitude and longitude must be valid decimal numbers."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if lat < -90 or lat > 90:
+            return Response(
+                {"detail": "Latitude must be between -90 and 90."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+            
+        if lon < -180 or lon > 180:
+            return Response(
+                {"detail": "Longitude must be between -180 and 180."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        max_distance = request.query_params.get('max_distance')
+        max_dist_val = None
+        if max_distance:
+            try:
+                max_dist_val = float(max_distance)
+            except ValueError:
+                return Response(
+                    {"detail": "max_distance must be a valid float number."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+        type_filter = request.query_params.get('type')
+        has_driver_filter = request.query_params.get('has_driver')
+        has_driver_bool = None
+        if has_driver_filter is not None:
+            has_driver_bool = has_driver_filter.lower() in ['true', '1', 'yes']
+
+        # Get all ACTIVE ambulances that are not currently occupied on an active mission
+        active_missions_amb_ids = Mission.objects.exclude(status__in=['COMPLETED', 'CANCELLED']).values_list('ambulance_id', flat=True)
+        ambulances = Ambulance.objects.filter(status='ACTIVE').exclude(id__in=active_missions_amb_ids).prefetch_related('equipment')
+
+        if type_filter:
+            ambulances = ambulances.filter(type=type_filter)
+
+        required_equipment = request.query_params.get('required_equipment')
+        req_equip_list = []
+        if required_equipment:
+            req_equip_list = [name.strip() for name in required_equipment.split(',') if name.strip()]
+            for eq_name in req_equip_list:
+                ambulances = ambulances.filter(equipment__name__iexact=eq_name)
+
+        if not ambulances.exists():
+            return Response([], status=status.HTTP_200_OK)
+
+        routing_results = self._get_ambulances_with_distances(lat, lon, ambulances)
+
+        results = []
+        for i, amb in enumerate(ambulances):
+            distance, eta = routing_results[i]
+
+            # Filter by max_distance if provided
+            if max_dist_val is not None and distance is not None:
+                if distance > max_dist_val:
+                    continue
+
+            # Active driver
+            active_driver_assignment = amb.assignments.filter(end_time__isnull=True).first()
+            active_driver = None
+            if active_driver_assignment and active_driver_assignment.driver:
+                active_driver = {
+                    "id": active_driver_assignment.driver.id,
+                    "name": active_driver_assignment.driver.user.name,
+                    "license_number": active_driver_assignment.driver.license_number
+                }
+
+            # Filter by has_driver if provided
+            if has_driver_bool is not None:
+                if has_driver_bool and not active_driver:
+                    continue
+                if not has_driver_bool and active_driver:
+                    continue
+
+            # Scoring logic
+            # 1. Driver score (Max 30 points)
+            base_driver_score = 30.0 if active_driver else 10.0
+
+            # 2. Distance score (Max 50 points) using exponential decay: 50.0 * exp(-distance / 15.0)
+            d_scale = 15.0
+            if distance is not None:
+                distance_score = 50.0 * math.exp(-distance / d_scale)
+            else:
+                distance_score = 0.0
+            distance_penalty = 50.0 - distance_score
+
+            # 3. Equipment score (Max 20 points)
+            if req_equip_list:
+                amb_equip_names = [e.name.lower() for e in amb.equipment.all()]
+                matched_count = sum(1 for req in req_equip_list if req.lower() in amb_equip_names)
+                total_req = len(req_equip_list)
+                equipment_score = 20.0 * (matched_count / total_req) if total_req > 0 else 20.0
+            else:
+                equipment_score = 20.0
+
+            # 4. Readiness score (placeholder, max 0)
+            readiness_score = 0.0
+
+            score = base_driver_score + distance_score + equipment_score + readiness_score
+            recommendation_score = round(max(0.0, min(100.0, score)), 1)
+
+            results.append({
+                "id": amb.id,
+                "ambulance_number": amb.ambulance_number,
+                "type": amb.type,
+                "status": amb.status,
+                "hospital": {
+                    "id": amb.hospital.id,
+                    "hospital_name": amb.hospital.hospital_name
+                } if amb.hospital else None,
+                "station": {
+                    "id": amb.station.id,
+                    "station_name": amb.station.station_name,
+                    "latitude": float(amb.station.latitude),
+                    "longitude": float(amb.station.longitude)
+                } if amb.station else None,
+                "distance": round(distance, 2) if distance is not None else None,
+                "eta": int(eta) if eta is not None else None,
+                "availability_status": "AVAILABLE",
+                "readiness_info": "Ready" if active_driver else "No Driver",
+                "active_driver": active_driver,
+                "equipment": list(amb.equipment.values_list('name', flat=True)),
+                "recommendation_score": recommendation_score,
+                "score_breakdown": {
+                    "base_driver_score": base_driver_score,
+                    "distance_penalty": round(distance_penalty, 2),
+                    "equipment_score": round(equipment_score, 2),
+                    "readiness_score": readiness_score
+                }
+            })
+
+        # Sort: recommendation_score descending
+        results.sort(key=lambda x: x["recommendation_score"], reverse=True)
+
+        return Response(results, status=status.HTTP_200_OK)
+
     def get_queryset(self):
         queryset = super().get_queryset()
         status_filter = self.request.query_params.get('status')
@@ -234,10 +341,58 @@ class AmbulanceViewSet(viewsets.ModelViewSet):
             )
         return super().destroy(request, *args, **kwargs)
 
-    def perform_update(self, serializer):
-        from django.db import transaction
-        from django.utils import timezone
+    def _get_ambulances_with_distances(self, lat, lon, ambulances_queryset):
+        def get_haversine_distance(lat1, lon1, lat2, lon2):
+            R = 6371.0 # Earth radius in km
+            lat1_r = math.radians(float(lat1))
+            lon1_r = math.radians(float(lon1))
+            lat2_r = math.radians(float(lat2))
+            lon2_r = math.radians(float(lon2))
+            dlat = lat2_r - lat1_r
+            dlon = lon2_r - lon1_r
+            a = math.sin(dlat / 2)**2 + math.cos(lat1_r) * math.cos(lat2_r) * math.sin(dlon / 2)**2
+            c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+            return R * c
+
+        def get_haversine_eta(distance_km):
+            return round((distance_km / 40.0) * 60.0)
+
+        api_key = getattr(settings, 'GRAPHHOPPER_API_KEY', '')
+
+        def fetch_routing_info(station):
+            if not station:
+                return None, None
+            if not api_key:
+                dist = get_haversine_distance(lat, lon, station.latitude, station.longitude)
+                return dist, get_haversine_eta(dist)
+            try:
+                url = f"https://graphhopper.com/api/1/route?point={lat},{lon}&point={station.latitude},{station.longitude}&profile=car&locale=en&key={api_key}"
+                req = urllib.request.Request(
+                    url, 
+                    headers={'User-Agent': 'Lifeline-Dispatch/1.0'}
+                )
+                with urllib.request.urlopen(req, timeout=5) as response:
+                    data = json.loads(response.read().decode())
+                    if 'paths' in data and len(data['paths']) > 0:
+                        path = data['paths'][0]
+                        dist_m = path.get('distance', 0)
+                        time_ms = path.get('time', 0)
+                        dist_km = dist_m / 1000.0
+                        eta_mins = round(time_ms / 60000.0)
+                        return dist_km, eta_mins
+            except Exception:
+                pass
+            dist = get_haversine_distance(lat, lon, station.latitude, station.longitude)
+            return dist, get_haversine_eta(dist)
+
+        stations = [amb.station for amb in ambulances_queryset]
         
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            routing_results = list(executor.map(fetch_routing_info, stations))
+            
+        return routing_results
+
+    def perform_update(self, serializer):
         ambulance_old = self.get_object()
         old_status = ambulance_old.status
         old_station = ambulance_old.station
@@ -309,8 +464,6 @@ class AmbulanceViewSet(viewsets.ModelViewSet):
         serializer.is_valid(raise_exception=True)
         
         driver = serializer.validated_data['driver_id']
-        from django.db import transaction
-        from django.utils import timezone
         
         with transaction.atomic():
             if driver is None:
@@ -424,7 +577,6 @@ class AmbulanceViewSet(viewsets.ModelViewSet):
         station = serializer.validated_data['station_id']
         old_station_name = ambulance.station.station_name if ambulance.station else "No Station"
         
-        from django.db import transaction
         with transaction.atomic():
             ambulance.station = station
             # Align hospital_id with station's hospital_id if different
@@ -464,10 +616,6 @@ class AmbulanceViewSet(viewsets.ModelViewSet):
         
         if old_status == new_status:
             return Response({"detail": "Ambulance is already in this status."}, status=status.HTTP_400_BAD_REQUEST)
-            
-        from django.db import transaction
-        from django.utils import timezone
-        
         with transaction.atomic():
             ambulance.status = new_status
             ambulance.save()
@@ -618,7 +766,7 @@ class EmergencyRequestPermission(permissions.BasePermission):
 
         # Create operation
         if request.method == 'POST':
-            return user_role in ['DISPATCHER', 'EMERGENCY_REQUESTOR']
+            return user_role in ['HOSPITAL_ADMINISTRATOR', 'DISPATCHER', 'EMERGENCY_REQUESTOR']
 
         # Update operation (PUT/PATCH)
         if request.method in ['PUT', 'PATCH']:
@@ -675,7 +823,6 @@ class EmergencyRequestViewSet(viewsets.ModelViewSet):
             queryset = queryset.filter(priority=priority_filter)
 
         # Apply sorting
-        from django.db.models import Case, When, Value, IntegerField
         user_role = user.role.name if (not user.is_superuser and user.role) else None
         if user.is_superuser or user_role in ['HOSPITAL_ADMINISTRATOR', 'DISPATCHER']:
             queryset = queryset.annotate(
@@ -704,7 +851,6 @@ class EmergencyRequestViewSet(viewsets.ModelViewSet):
         serializer.save(**extra_kwargs)
 
     def perform_update(self, serializer):
-        from django.db import transaction
         with transaction.atomic():
             instance = serializer.save()
             if instance.status in ['CANCELLED', 'PENDING']:
@@ -853,5 +999,11 @@ class MissionViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         serializer.save()
+
+
+class EquipmentViewSet(viewsets.ModelViewSet):
+    queryset = Equipment.objects.all().order_by('name')
+    serializer_class = EquipmentSerializer
+    permission_classes = [IsAuthenticated]
 
 

@@ -28,6 +28,8 @@ const Ambulances = () => {
   const [selectedAmbulance, setSelectedAmbulance] = useState(null);
   const [historyLogs, setHistoryLogs] = useState([]);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [equipmentList, setEquipmentList] = useState([]);
+  const [newEquipmentName, setNewEquipmentName] = useState('');
 
   // Form states
   const [formData, setFormData] = useState({
@@ -36,6 +38,7 @@ const Ambulances = () => {
     station_id: '',
     type: 'Basic Life Support',
     status: 'ACTIVE',
+    equipment: [],
   });
   
   const [assignDriverId, setAssignDriverId] = useState('');
@@ -56,15 +59,17 @@ const Ambulances = () => {
       if (typeFilter) params.type = typeFilter;
       if (stationFilter) params.station_id = stationFilter;
 
-      const [ambRes, hospRes, statRes] = await Promise.all([
+      const [ambRes, hospRes, statRes, equipRes] = await Promise.all([
         api.get('/ambulances/', { params }),
         api.get('/hospitals/'),
         api.get('/stations/'),
+        api.get('/equipment/'),
       ]);
 
       setAmbulances(ambRes.data);
       setHospitals(hospRes.data);
       setStations(statRes.data);
+      setEquipmentList(equipRes.data);
       
       // If user has write access, load available drivers
       if (isWritable) {
@@ -105,6 +110,7 @@ const Ambulances = () => {
           station_id: ambulance.station?.id || '',
           type: ambulance.type,
           status: ambulance.status,
+          equipment: ambulance.equipment || [],
         });
       } else if (modalType === 'assign') {
         setAssignDriverId(ambulance.active_driver?.id || '');
@@ -127,6 +133,7 @@ const Ambulances = () => {
         station_id: '',
         type: 'Basic Life Support',
         status: 'ACTIVE',
+        equipment: [],
       });
     }
   };
@@ -236,6 +243,38 @@ const Ambulances = () => {
     } catch (err) {
       setError(err.non_field_errors?.[0] || err.detail || 'Failed to change status.');
     }
+  };
+
+  const handleToggleEquipment = (eqName) => {
+    const isSelected = formData.equipment.includes(eqName);
+    if (isSelected) {
+      setFormData({
+        ...formData,
+        equipment: formData.equipment.filter(name => name !== eqName)
+      });
+    } else {
+      setFormData({
+        ...formData,
+        equipment: [...formData.equipment, eqName]
+      });
+    }
+  };
+
+  const handleAddCustomEquipment = (e) => {
+    e.preventDefault();
+    if (!newEquipmentName || !newEquipmentName.trim()) return;
+    const cleanedName = newEquipmentName.trim();
+    if (!formData.equipment.includes(cleanedName)) {
+      setFormData({
+        ...formData,
+        equipment: [...formData.equipment, cleanedName]
+      });
+    }
+    // Also add to equipmentList if not already there, so it shows up as a checkbox option temporarily
+    if (!equipmentList.some(eq => eq.name.toLowerCase() === cleanedName.toLowerCase())) {
+      setEquipmentList([...equipmentList, { id: cleanedName, name: cleanedName }]);
+    }
+    setNewEquipmentName('');
   };
 
   // Compute metrics
@@ -377,6 +416,16 @@ const Ambulances = () => {
                     👤 {amb.active_driver?.name || 'No Driver'}
                   </span>
                 </div>
+                {amb.equipment && amb.equipment.length > 0 && (
+                  <div className="card-detail equipment-detail">
+                    <span className="detail-label">Equipment</span>
+                    <span className="detail-val equipment-tags">
+                      {amb.equipment.map(eq => (
+                        <span key={eq} className="equip-tag">🔧 {eq}</span>
+                      ))}
+                    </span>
+                  </div>
+                )}
               </div>
               
               <div className="card-actions">
@@ -501,6 +550,38 @@ const Ambulances = () => {
                       <option value="Advanced Life Support">Advanced Life Support</option>
                       <option value="Patient Transport">Patient Transport</option>
                     </select>
+                  </div>
+                  <div className="form-group">
+                    <label>Medical Equipment</label>
+                    <div className="equipment-checkboxes-grid">
+                      {equipmentList.map(eq => (
+                        <label key={eq.id} className="checkbox-label equipment-checkbox-label">
+                          <input
+                            type="checkbox"
+                            checked={formData.equipment.includes(eq.name)}
+                            onChange={() => handleToggleEquipment(eq.name)}
+                          />
+                          {eq.name}
+                        </label>
+                      ))}
+                    </div>
+                    
+                    <div className="add-custom-equipment-row">
+                      <input
+                        type="text"
+                        placeholder="Add new equipment type..."
+                        value={newEquipmentName}
+                        onChange={(e) => setNewEquipmentName(e.target.value)}
+                        className="custom-eq-input"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleAddCustomEquipment}
+                        className="btn-secondary btn-small"
+                      >
+                        Add
+                      </button>
+                    </div>
                   </div>
                   <div className="form-actions-row">
                     <button type="button" className="btn-cancel" onClick={handleCloseModal}>Cancel</button>

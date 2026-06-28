@@ -23,6 +23,13 @@ class Station(models.Model):
     def __str__(self):
         return self.station_name
 
+class Equipment(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    name = models.CharField(max_length=100, unique=True)
+
+    def __str__(self):
+        return self.name
+
 class Ambulance(models.Model):
     AMBULANCE_TYPES = [
         ('Basic Life Support', 'Basic Life Support'),
@@ -42,6 +49,7 @@ class Ambulance(models.Model):
     station = models.ForeignKey(Station, on_delete=models.SET_NULL, null=True, blank=True, related_name='ambulances')
     type = models.CharField(max_length=50, choices=AMBULANCE_TYPES, default='Basic Life Support')
     status = models.CharField(max_length=50, choices=STATUS_CHOICES, default='ACTIVE')
+    equipment = models.ManyToManyField(Equipment, blank=True, related_name='ambulances')
 
     def __str__(self):
         return f"{self.ambulance_number} ({self.status})"

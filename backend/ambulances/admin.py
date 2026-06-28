@@ -1,5 +1,10 @@
 from django.contrib import admin
-from .models import Hospital, Station, Ambulance, Driver, DriverAssignment, AmbulanceOperationalHistory
+from .models import Hospital, Station, Ambulance, Driver, DriverAssignment, AmbulanceOperationalHistory, Equipment
+
+@admin.register(Equipment)
+class EquipmentAdmin(admin.ModelAdmin):
+    list_display = ('name',)
+    search_fields = ('name',)
 
 @admin.register(Hospital)
 class HospitalAdmin(admin.ModelAdmin):
@@ -13,9 +18,14 @@ class StationAdmin(admin.ModelAdmin):
 
 @admin.register(Ambulance)
 class AmbulanceAdmin(admin.ModelAdmin):
-    list_display = ('ambulance_number', 'hospital', 'station', 'type', 'status')
+    list_display = ('ambulance_number', 'hospital', 'station', 'type', 'status', 'display_equipment')
     list_filter = ('status', 'type', 'hospital')
     search_fields = ('ambulance_number',)
+    filter_horizontal = ('equipment',)
+
+    def display_equipment(self, obj):
+        return ", ".join([eq.name for eq in obj.equipment.all()])
+    display_equipment.short_description = 'Equipment'
 
 @admin.register(Driver)
 class DriverAdmin(admin.ModelAdmin):

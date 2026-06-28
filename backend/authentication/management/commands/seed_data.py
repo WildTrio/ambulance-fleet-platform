@@ -1,7 +1,7 @@
 from django.core.management.base import BaseCommand
 from django.contrib.auth import get_user_model
 from authentication.models import Role
-from ambulances.models import Hospital, Station, Ambulance, Driver
+from ambulances.models import Hospital, Station, Ambulance, Driver, Equipment
 
 User = get_user_model()
 
@@ -239,6 +239,36 @@ class Command(BaseCommand):
             )
             if created:
                 self.stdout.write(f"Created ambulance: {ambulance.ambulance_number}")
+
+        self.stdout.write('Seeding equipment...')
+        equipment_names = ['Defibrillator', 'Ventilator', 'Oxygen Tank', 'First Aid Kit', 'Trauma Kit']
+        equipments = {}
+        for name in equipment_names:
+            eq, created = Equipment.objects.get_or_create(name=name)
+            equipments[name] = eq
+            if created:
+                self.stdout.write(f"Created equipment: {name}")
+
+        # Link equipment to mock ambulances
+        amb_001 = Ambulance.objects.filter(ambulance_number='AMB-001').first()
+        if amb_001:
+            amb_001.equipment.add(equipments['Defibrillator'], equipments['Ventilator'], equipments['Oxygen Tank'], equipments['First Aid Kit'])
+            self.stdout.write("Assigned equipment to AMB-001")
+
+        amb_002 = Ambulance.objects.filter(ambulance_number='AMB-002').first()
+        if amb_002:
+            amb_002.equipment.add(equipments['Oxygen Tank'], equipments['First Aid Kit'])
+            self.stdout.write("Assigned equipment to AMB-002")
+
+        amb_003 = Ambulance.objects.filter(ambulance_number='AMB-003').first()
+        if amb_003:
+            amb_003.equipment.add(equipments['First Aid Kit'])
+            self.stdout.write("Assigned equipment to AMB-003")
+
+        amb_mp_09 = Ambulance.objects.filter(ambulance_number='AMB-MP-09').first()
+        if amb_mp_09:
+            amb_mp_09.equipment.add(equipments['Defibrillator'], equipments['Oxygen Tank'], equipments['First Aid Kit'])
+            self.stdout.write("Assigned equipment to AMB-MP-09")
 
         self.stdout.write(self.style.SUCCESS('Database seeding completed successfully.'))
 

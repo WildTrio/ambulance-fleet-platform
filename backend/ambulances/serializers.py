@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Hospital, Station, Ambulance, Driver, DriverAssignment, AmbulanceOperationalHistory, Shift, Certification, EmergencyRequest, Mission
+from .models import Hospital, Station, Ambulance, Driver, DriverAssignment, AmbulanceOperationalHistory, Shift, Certification, EmergencyRequest, Mission, Equipment
 from authentication.serializers import UserSerializer
 
 class HospitalSerializer(serializers.ModelSerializer):
@@ -47,6 +47,15 @@ class DriverSerializer(serializers.ModelSerializer):
         if queryset.exists():
             raise serializers.ValidationError("A driver with this contact number already exists.")
         return value
+
+    def validate(self, data):
+        if self.instance and data.get('availability', self.instance.availability):
+            from .models import Mission
+            if Mission.objects.filter(driver=self.instance).exclude(status__in=['COMPLETED', 'CANCELLED']).exists():
+                raise serializers.ValidationError(
+                    {"availability": "Cannot mark driver as available while they are on an active mission."}
+                )
+        return data
 
     def create(self, validated_data):
         from django.contrib.auth import get_user_model
@@ -141,6 +150,11 @@ class AmbulanceOperationalHistorySerializer(serializers.ModelSerializer):
         model = AmbulanceOperationalHistory
         fields = ['id', 'event_type', 'old_value', 'new_value', 'changed_by', 'changed_at', 'remarks']
 
+class EquipmentSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Equipment
+        fields = ['id', 'name']
+
 class AmbulanceSerializer(serializers.ModelSerializer):
     hospital_id = serializers.PrimaryKeyRelatedField(
         queryset=Hospital.objects.all(), source='hospital', write_only=True
@@ -152,12 +166,18 @@ class AmbulanceSerializer(serializers.ModelSerializer):
     station = StationSerializer(read_only=True)
     active_driver = serializers.SerializerMethodField()
     active_mission = serializers.SerializerMethodField()
+    equipment = serializers.ListField(
+        child=serializers.CharField(),
+        required=False,
+        write_only=True
+    )
 
     class Meta:
         model = Ambulance
         fields = [
             'id', 'ambulance_number', 'hospital_id', 'hospital',
-            'station_id', 'station', 'type', 'status', 'active_driver', 'active_mission'
+            'station_id', 'station', 'type', 'status', 'active_driver', 'active_mission',
+            'equipment'
         ]
 
     def get_active_driver(self, obj):
@@ -190,6 +210,34 @@ class AmbulanceSerializer(serializers.ModelSerializer):
         if queryset.exists():
             raise serializers.ValidationError("An ambulance with this number already exists.")
         return value
+
+    def create(self, validated_data):
+        equipment_names = validated_data.pop('equipment', [])
+        ambulance = Ambulance.objects.create(**validated_data)
+        equipment_objs = []
+        for name in equipment_names:
+            eq, _ = Equipment.objects.get_or_create(name=name.strip())
+            equipment_objs.append(eq)
+        ambulance.equipment.set(equipment_objs)
+        return ambulance
+
+    def update(self, instance, validated_data):
+        equipment_names = validated_data.pop('equipment', None)
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        instance.save()
+        if equipment_names is not None:
+            equipment_objs = []
+            for name in equipment_names:
+                eq, _ = Equipment.objects.get_or_create(name=name.strip())
+                equipment_objs.append(eq)
+            instance.equipment.set(equipment_objs)
+        return instance
+
+    def to_representation(self, instance):
+        ret = super().to_representation(instance)
+        ret['equipment'] = [eq.name for eq in instance.equipment.all()]
+        return ret
 
 class AssignDriverSerializer(serializers.Serializer):
     driver_id = serializers.UUIDField(allow_null=True, required=True)
