@@ -47,6 +47,16 @@ A secure, role-restricted web platform for managing hospital ambulance fleets, d
 * **Safety Lock on Closed Cases**: Implemented backend-level validations preventing any modifications once a request transitions to Completed or Cancelled.
 * **RBAC Controls**: Allows dispatchers/admins to manage the entire queue and adjust priority/status, while citizens can submit, track, and cancel their own requests.
 
+### Phase 6: Reverse Ambulance Search Engine & Equipment Availability
+* **Intelligent Recommendation Engine**: Ranks active and unoccupied ambulances on a 0–100 score basis:
+  * **Distance Score (Max 50 pts)**: Calculates distance to request location using an Exponential Decay model ($$50.0 \times e^{-\frac{\text{distance}}{15.0}}$$) to naturally bound and smooth scores.
+  * **Driver Score (Max 30 pts)**: Grants 30 points if immediately ready with an active driver assigned (otherwise 10 points).
+  * **Equipment Match Score (Max 20 pts)**: Ranks according to the percent match of requested equipment.
+* **Equipment Catalog & Dynamic Inventory**: Full database model tracking equipment catalogs (e.g. Defibrillator, Ventilator, ECG Monitor, Oxygen Tank) with on-the-fly equipment provisioning when updating ambulances.
+* **Filter Controls & Visual Indicators**:
+  * Added search filters to the Dispatch Console to sort recommendation lists by Max Distance, Ambulance Type, Driver Assigned status, and comma-separated Required Equipment.
+  * Displays color-coded score breakdowns and available equipment badges on each ambulance card in the Dispatch Console and Fleet Management view.
+
 ---
 
 ## 💻 Running the Project Locally
