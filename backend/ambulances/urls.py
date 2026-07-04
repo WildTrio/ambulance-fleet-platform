@@ -3,7 +3,7 @@ from rest_framework.routers import DefaultRouter
 from .views import (
     AmbulanceViewSet, HospitalViewSet, StationViewSet, DriverViewSet,
     ShiftViewSet, CertificationViewSet, EmergencyRequestViewSet,
-    MissionViewSet, EquipmentViewSet
+    MissionViewSet, EquipmentViewSet, TripViewSet
 )
 
 router = DefaultRouter()
@@ -16,6 +16,7 @@ router.register(r'certifications', CertificationViewSet, basename='certification
 router.register(r'emergency-requests', EmergencyRequestViewSet, basename='emergency-request')
 router.register(r'missions', MissionViewSet, basename='mission')
 router.register(r'equipment', EquipmentViewSet, basename='equipment')
+router.register(r'trips', TripViewSet, basename='trip')
 
 urlpatterns = [
     path('', include(router.urls)),

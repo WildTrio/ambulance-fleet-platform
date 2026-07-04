@@ -3,7 +3,7 @@ from rest_framework import status
 from rest_framework.test import APITestCase
 from django.contrib.auth import get_user_model
 from authentication.models import Role
-from ambulances.models import Hospital, Station, Ambulance, Driver, DriverAssignment, AmbulanceOperationalHistory, Shift, Certification, EmergencyRequest, Mission
+from ambulances.models import Hospital, Station, Ambulance, Driver, DriverAssignment, AmbulanceOperationalHistory, Shift, Certification, EmergencyRequest, Mission, Trip
 
 User = get_user_model()
 
@@ -1047,6 +1047,214 @@ class DispatchConsoleMissionTests(APITestCase):
         self.client.force_authenticate(user=self.disp_user)
         response = self.client.post(transition_url, {"status": "EN_ROUTE"}, format='json')
         self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+
+class DigitalTripManagementTests(APITestCase):
+    def setUp(self):
+        # Create roles
+        self.admin_role = Role.objects.create(name='HOSPITAL_ADMINISTRATOR')
+        self.disp_role = Role.objects.create(name='DISPATCHER')
+        self.driver_role = Role.objects.create(name='DRIVER')
+
+        # Create users
+        self.admin_user = User.objects.create_user(email='admin@h.org', name='Admin', password='Password123!', role=self.admin_role)
+        self.disp_user = User.objects.create_user(email='disp@h.org', name='Dispatcher', password='Password123!', role=self.disp_role)
+        self.driver_user = User.objects.create_user(email='driver@h.org', name='Rahul Driver', password='Password123!', role=self.driver_role)
+        self.driver_user2 = User.objects.create_user(email='driver2@h.org', name='Bob Driver', password='Password123!', role=self.driver_role)
+
+        # Create Hospital
+        self.hosp = Hospital.objects.create(
+            hospital_name="City Hospital",
+            address="123 Main St",
+            city="Metropolis",
+            state="NY",
+            contact_number="555-0199"
+        )
+        
+        # Create Stations
+        self.station1 = Station.objects.create(
+            hospital=self.hosp,
+            station_name="North Station",
+            latitude=40.7128,
+            longitude=-74.0060
+        )
+        self.station2 = Station.objects.create(
+            hospital=self.hosp,
+            station_name="East Station",
+            latitude=40.7200,
+            longitude=-73.9900
+        )
+
+        # Create Ambulance
+        self.amb = Ambulance.objects.create(
+            ambulance_number="AMB-100",
+            hospital=self.hosp,
+            station=self.station1,
+            type='ALS',
+            status='ACTIVE',
+            lifecycle_status='AVAILABLE'
+        )
+
+        # Create Drivers
+        self.driver1 = Driver.objects.create(
+            user=self.driver_user,
+            license_number="DL-100",
+            contact="111-222-3333",
+            availability=True
+        )
+        self.driver2 = Driver.objects.create(
+            user=self.driver_user2,
+            license_number="DL-200",
+            contact="111-222-4444",
+            availability=True
+        )
+
+        # Assign driver1 to ambulance
+        DriverAssignment.objects.create(driver=self.driver1, ambulance=self.amb)
+        self.driver1.availability = False
+        self.driver1.save()
+
+        # Create EmergencyRequest (incident location: 40.7300, -73.9800)
+        self.req = EmergencyRequest.objects.create(
+            requester_name="John Requestor",
+            contact_number="555-0100",
+            emergency_type="Cardiac Arrest",
+            priority="CRITICAL",
+            pickup_location="Times Square",
+            latitude=40.7300,
+            longitude=-73.9800,
+            status='PENDING',
+            created_by=self.disp_user
+        )
+
+    def test_trip_lifecycle_and_distance_calculation(self):
+        # 1. Dispatch/Create Mission -> Trip should be auto-created in ACTIVE status
+        self.client.force_authenticate(user=self.disp_user)
+        dispatch_url = reverse('mission-list')
+        response = self.client.post(dispatch_url, {
+            "emergency_request_id": str(self.req.id),
+            "ambulance_id": str(self.amb.id),
+            "driver_id": str(self.driver1.id)
+        }, format='json')
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        mission_id = response.data['id']
+        
+        # Verify trip creation
+        trip = Trip.objects.filter(mission_id=mission_id).first()
+        self.assertIsNotNone(trip)
+        self.assertEqual(trip.status, 'ACTIVE')
+        self.assertIsNone(trip.start_time)
+        self.assertIsNone(trip.end_time)
+        self.assertEqual(trip.distance_km, 0.0)
+
+        # 2. Driver departs (transition to EN_ROUTE) -> start_time should be set
+        self.client.force_authenticate(user=self.driver_user)
+        transition_url = reverse('ambulance-transition-lifecycle', kwargs={'pk': str(self.amb.id)})
+        response = self.client.post(transition_url, {"status": "EN_ROUTE"}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        
+        trip.refresh_from_db()
+        self.assertIsNotNone(trip.start_time)
+        self.assertEqual(trip.status, 'ACTIVE')
+
+        # 3. Subsequent transitions
+        response = self.client.post(transition_url, {"status": "AT_INCIDENT"}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        response = self.client.post(transition_url, {"status": "PATIENT_ONBOARD"}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        response = self.client.post(transition_url, {"status": "HOSPITAL_ARRIVAL"}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        response = self.client.post(transition_url, {"status": "SANITIZATION"}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        
+        # Transition to READY completes mission and should finalize trip
+        response = self.client.post(transition_url, {"status": "READY"}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        trip.refresh_from_db()
+        self.assertEqual(trip.status, 'COMPLETED')
+        self.assertIsNotNone(trip.end_time)
+        self.assertTrue(trip.distance_km > 0.0)
+        self.assertIn("Trip completed successfully", trip.summary)
+        self.assertIn("Rahul Driver", trip.summary)
+        self.assertIn("AMB-100", trip.summary)
+
+    def test_mid_mission_cancellation(self):
+        # Dispatch
+        self.client.force_authenticate(user=self.disp_user)
+        dispatch_url = reverse('mission-list')
+        response = self.client.post(dispatch_url, {
+            "emergency_request_id": str(self.req.id),
+            "ambulance_id": str(self.amb.id),
+            "driver_id": str(self.driver1.id)
+        }, format='json')
+        mission_id = response.data['id']
+        
+        # Transition to EN_ROUTE
+        self.client.force_authenticate(user=self.driver_user)
+        transition_url = reverse('ambulance-transition-lifecycle', kwargs={'pk': str(self.amb.id)})
+        self.client.post(transition_url, {"status": "EN_ROUTE"}, format='json')
+
+        # Cancel/abort from Dispatcher (transition to AVAILABLE)
+        self.client.force_authenticate(user=self.disp_user)
+        response = self.client.post(transition_url, {"status": "AVAILABLE", "remarks": "False alarm"}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        trip = Trip.objects.get(mission_id=mission_id)
+        self.assertEqual(trip.status, 'CANCELLED')
+        self.assertIn("Trip cancelled midway", trip.summary)
+        self.assertIn("Phase reached: En Route", trip.summary)
+        self.assertTrue(trip.distance_km > 0.0)
+
+    def test_trip_api_rbac_and_filters(self):
+        # Setup finished Trip
+        mission = Mission.objects.create(
+            emergency_request=self.req,
+            ambulance=self.amb,
+            driver=self.driver1,
+            status='COMPLETED'
+        )
+        trip = Trip.objects.get(mission=mission)
+        trip.status = 'COMPLETED'
+        trip.save()
+
+        # Test list endpoint /api/trips/
+        # 1. Driver should be forbidden
+        self.client.force_authenticate(user=self.driver_user)
+        response = self.client.get(reverse('trip-list'))
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+        # 2. Dispatcher should be allowed
+        self.client.force_authenticate(user=self.disp_user)
+        response = self.client.get(reverse('trip-list'))
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data), 1)
+
+        # Test /api/trips/my-trips/
+        # 1. Driver should see their own trips
+        self.client.force_authenticate(user=self.driver_user)
+        response = self.client.get(reverse('trip-my-trips'))
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data), 1)
+
+        # 2. Other driver should not see driver1's trips in my-trips
+        self.client.force_authenticate(user=self.driver_user2)
+        response = self.client.get(reverse('trip-my-trips'))
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data), 0)
+
+        # Test detail view
+        detail_url = reverse('trip-detail', kwargs={'pk': str(trip.id)})
+        # 1. Driver 1 (assigned driver) allowed
+        self.client.force_authenticate(user=self.driver_user)
+        response = self.client.get(detail_url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        # 2. Driver 2 (unrelated driver) forbidden
+        self.client.force_authenticate(user=self.driver_user2)
+        response = self.client.get(detail_url)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
 
 
 

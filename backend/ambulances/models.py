@@ -266,5 +266,197 @@ class Mission(models.Model):
     def __str__(self):
         return f"Mission {self.id} - Request: {self.emergency_request.requester_name} - Ambulance: {self.ambulance.ambulance_number} ({self.status})"
 
+    def save(self, *args, **kwargs):
+        is_new = self.pk is None
+        old_status = None
+        if not is_new:
+            try:
+                old_status = Mission.objects.get(pk=self.pk).status
+            except Mission.DoesNotExist:
+                pass
+
+        super().save(*args, **kwargs)
+
+        # Handle Trip creation/updates
+        from django.utils import timezone
+        from .models import Trip
+        
+        if is_new:
+            # Create active trip
+            Trip.objects.get_or_create(
+                mission=self,
+                defaults={
+                    'ambulance': self.ambulance,
+                    'driver': self.driver,
+                    'status': 'ACTIVE'
+                }
+            )
+        else:
+            # Update trip based on mission status transition
+            trip = getattr(self, 'trip', None)
+            if not trip:
+                # Fallback if trip wasn't created
+                trip, _ = Trip.objects.get_or_create(
+                    mission=self,
+                    defaults={
+                        'ambulance': self.ambulance,
+                        'driver': self.driver,
+                        'status': 'ACTIVE'
+                    }
+                )
+
+            if trip.status == 'ACTIVE':
+                # Transition to EN_ROUTE starts the trip
+                if self.status == 'EN_ROUTE' and not trip.start_time:
+                    trip.start_time = timezone.now()
+                    trip.save()
+                
+                # Completion or Cancellation ends the trip
+                elif self.status in ['COMPLETED', 'CANCELLED']:
+                    trip.end_time = timezone.now()
+                    
+                    if not trip.start_time:
+                        # Cancelled/Completed before departing
+                        trip.start_time = trip.end_time
+                        trip.distance_km = 0.0
+                    else:
+                        # Calculate distance using Haversine
+                        trip.distance_km = self.calculate_trip_distance(old_status or 'ASSIGNED')
+                    
+                    # Generate natural language summary
+                    trip.summary = self.generate_trip_summary(trip, old_status)
+                    trip.status = 'COMPLETED' if self.status == 'COMPLETED' else 'CANCELLED'
+                    trip.save()
+
+    def calculate_trip_distance(self, last_status):
+        import math
+        
+        def haversine(lat1, lon1, lat2, lon2):
+            if lat1 is None or lon1 is None or lat2 is None or lon2 is None:
+                return 0.0
+            try:
+                R = 6371.0  # Earth radius in km
+                lat1_r = math.radians(float(lat1))
+                lon1_r = math.radians(float(lon1))
+                lat2_r = math.radians(float(lat2))
+                lon2_r = math.radians(float(lon2))
+                dlat = lat2_r - lat1_r
+                dlon = lon2_r - lon1_r
+                a = math.sin(dlat / 2)**2 + math.cos(lat1_r) * math.cos(lat2_r) * math.sin(dlon / 2)**2
+                c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+                return R * c
+            except Exception:
+                return 0.0
+
+        # Segment 1: Station coordinates to Incident coordinates
+        station_lat = self.ambulance.station.latitude if (self.ambulance and self.ambulance.station) else None
+        station_lon = self.ambulance.station.longitude if (self.ambulance and self.ambulance.station) else None
+        incident_lat = self.emergency_request.latitude if self.emergency_request else None
+        incident_lon = self.emergency_request.longitude if self.emergency_request else None
+
+        dist1 = haversine(station_lat, station_lon, incident_lat, incident_lon)
+
+        # Segment 2: Incident coordinates to Hospital coordinates
+        dest_hospital = self.ambulance.hospital if self.ambulance else None
+        
+        # Get coordinates of any station associated with the destination hospital
+        dest_lat = None
+        dest_lon = None
+        if dest_hospital:
+            first_station = dest_hospital.stations.first()
+            if first_station:
+                dest_lat = first_station.latitude
+                dest_lon = first_station.longitude
+        
+        # Fallback to home station if no station for hospital found
+        if dest_lat is None or dest_lon is None:
+            dest_lat = station_lat
+            dest_lon = station_lon
+
+        dist2 = haversine(incident_lat, incident_lon, dest_lat, dest_lon)
+
+        # Calculate based on when/where the mission ends/cancels
+        if self.status == 'CANCELLED':
+            if last_status == 'ASSIGNED':
+                return 0.0
+            elif last_status in ['EN_ROUTE', 'AT_INCIDENT']:
+                return round(dist1, 2)
+            else:  # PATIENT_ONBOARD, HOSPITAL_ARRIVAL, SANITIZATION
+                return round(dist1 + dist2, 2)
+        else:  # COMPLETED
+            return round(dist1 + dist2, 2)
+
+    def generate_trip_summary(self, trip, last_phase=None):
+        duration_mins = 0
+        if trip.end_time and trip.start_time:
+            diff = trip.end_time - trip.start_time
+            duration_mins = max(0, int(diff.total_seconds() / 60))
+
+        driver_name = self.driver.user.name if (self.driver and self.driver.user) else "Unknown Driver"
+        ambulance_no = self.ambulance.ambulance_number if self.ambulance else "Unknown"
+        patient_name = self.emergency_request.requester_name if self.emergency_request else "Unknown"
+        incident_type = self.emergency_request.emergency_type if self.emergency_request else "Emergency"
+        
+        dest_hospital = self.ambulance.hospital if self.ambulance else None
+        hospital_name = dest_hospital.hospital_name if dest_hospital else "Unknown Hospital"
+
+        if self.status == 'COMPLETED':
+            return (
+                f"Trip completed successfully. Total duration: {duration_mins} mins. "
+                f"Total distance: {trip.distance_km} km. Driver: {driver_name}. "
+                f"Vehicle: {ambulance_no}. Patient: {patient_name} ({incident_type}). "
+                f"Destination: {hospital_name}."
+            )
+        else:
+            phase = last_phase or self.status
+            last_phase_display = phase.replace('_', ' ').title()
+            
+            return (
+                f"Trip cancelled midway. Phase reached: {last_phase_display}. "
+                f"Total duration: {duration_mins} mins. Total distance: {trip.distance_km} km. "
+                f"Driver: {driver_name}. Vehicle: {ambulance_no}."
+            )
+
+
+
+class Trip(models.Model):
+    TRIP_STATUS_CHOICES = [
+        ('ACTIVE', 'Active'),
+        ('COMPLETED', 'Completed'),
+        ('CANCELLED', 'Cancelled'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    mission = models.OneToOneField(
+        'Mission',
+        on_delete=models.CASCADE,
+        related_name='trip'
+    )
+    ambulance = models.ForeignKey(
+        'Ambulance',
+        on_delete=models.PROTECT,
+        related_name='trips'
+    )
+    driver = models.ForeignKey(
+        'Driver',
+        on_delete=models.PROTECT,
+        related_name='trips'
+    )
+    status = models.CharField(
+        max_length=20,
+        choices=TRIP_STATUS_CHOICES,
+        default='ACTIVE'
+    )
+    start_time = models.DateTimeField(null=True, blank=True)
+    end_time = models.DateTimeField(null=True, blank=True)
+    distance_km = models.FloatField(default=0.0)
+    summary = models.TextField(blank=True, default='')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"Trip {self.id} - Amb: {self.ambulance.ambulance_number} ({self.status})"
+
+
 
 

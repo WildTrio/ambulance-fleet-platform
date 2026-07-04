@@ -71,6 +71,13 @@ A secure, role-restricted web platform for managing hospital ambulance fleets, d
 * **Driver Safety locks**: Disallows drivers from aborting or cancelling active missions on their own (only dispatchers/admins can perform cancellations).
 * **Audit Trail Log**: Chronological timeline of operational status logs tracking the changing users, timestamps, and custom remarks (e.g., sanitization notes).
 
+### Phase 8: Digital Trip Management
+* **Automated Trip Logging**: Automatically records a trip log once an ambulance mission starts, tracking trip status, start time, end time, and operational remarks.
+* **Haversine Distance Calculation**: Automatically calculates the total driving distance (in kilometers) between the vehicle's starting station, the patient's pickup location, and the destination hospital using the Haversine formula.
+* **Natural Language Summary Generation**: Generates automated, descriptive reports summarizing the mission details (driver name, vehicle number, patient name, emergency type, destination hospital, total duration, and distance).
+* **Trip History Console & Reports**: Features a premium, interactive archive panel for administrators and dispatchers to query logs by driver, ambulance, status, and date range, with a printable summary report layout.
+* **Driver Past Trips Archive**: Provides drivers with a collapsible "Past Trips History" panel in their console to review their completed/cancelled mission records.
+
 ---
 
 ## 💻 Running the Project Locally

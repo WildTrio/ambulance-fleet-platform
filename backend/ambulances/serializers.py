@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Hospital, Station, Ambulance, Driver, DriverAssignment, AmbulanceOperationalHistory, AmbulanceLifecycleLog, Shift, Certification, EmergencyRequest, Mission, Equipment
+from .models import Hospital, Station, Ambulance, Driver, DriverAssignment, AmbulanceOperationalHistory, AmbulanceLifecycleLog, Shift, Certification, EmergencyRequest, Mission, Equipment, Trip
 from authentication.serializers import UserSerializer
 
 class HospitalSerializer(serializers.ModelSerializer):
@@ -507,5 +507,50 @@ class MissionSerializer(serializers.ModelSerializer):
                 req.save()
                 
         return instance
+
+
+class TripSerializer(serializers.ModelSerializer):
+    ambulance = serializers.SerializerMethodField()
+    driver = serializers.SerializerMethodField()
+    mission = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Trip
+        fields = [
+            'id', 'mission', 'ambulance', 'driver', 'status',
+            'start_time', 'end_time', 'distance_km', 'summary',
+            'created_at', 'updated_at'
+        ]
+        read_only_fields = ['id', 'created_at', 'updated_at']
+
+    def get_ambulance(self, obj):
+        if obj.ambulance:
+            return {
+                'id': obj.ambulance.id,
+                'ambulance_number': obj.ambulance.ambulance_number
+            }
+        return None
+
+    def get_driver(self, obj):
+        if obj.driver:
+            return {
+                'id': obj.driver.id,
+                'name': obj.driver.user.name if obj.driver.user else "Unknown Driver"
+            }
+        return None
+
+    def get_mission(self, obj):
+        if obj.mission:
+            return {
+                'id': obj.mission.id,
+                'status': obj.mission.status,
+                'emergency_request': {
+                    'id': obj.mission.emergency_request.id,
+                    'requester_name': obj.mission.emergency_request.requester_name,
+                    'medical_issue': obj.mission.emergency_request.emergency_type
+                } if obj.mission.emergency_request else None
+            }
+        return None
+
 
 

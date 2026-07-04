@@ -14,13 +14,13 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 
-from .models import Hospital, Station, Ambulance, Driver, DriverAssignment, AmbulanceOperationalHistory, AmbulanceLifecycleLog, Shift, Certification, EmergencyRequest, Mission, Equipment
+from .models import Hospital, Station, Ambulance, Driver, DriverAssignment, AmbulanceOperationalHistory, AmbulanceLifecycleLog, Shift, Certification, EmergencyRequest, Mission, Equipment, Trip
 from .serializers import (
     HospitalSerializer, StationSerializer, DriverSerializer,
     AmbulanceSerializer, AmbulanceOperationalHistorySerializer, AmbulanceLifecycleLogSerializer,
     AssignDriverSerializer, TransferStationSerializer, ChangeStatusSerializer,
     ShiftSerializer, CertificationSerializer, EmergencyRequestSerializer,
-    MissionSerializer, EquipmentSerializer
+    MissionSerializer, EquipmentSerializer, TripSerializer
 )
 
 class AmbulancePermission(permissions.BasePermission):
@@ -1119,5 +1119,104 @@ class EquipmentViewSet(viewsets.ModelViewSet):
     queryset = Equipment.objects.all().order_by('name')
     serializer_class = EquipmentSerializer
     permission_classes = [IsAuthenticated]
+
+
+class TripPermission(permissions.BasePermission):
+    def has_permission(self, request, view):
+        if not request.user or not request.user.is_authenticated:
+            return False
+        if request.user.is_superuser:
+            return True
+            
+        user_role = request.user.role.name if request.user.role else None
+        
+        # Drivers can only access retrieve detail view or 'my-trips' action
+        if user_role == 'DRIVER':
+            if view.action in ['retrieve', 'my_trips']:
+                return True
+            return False
+            
+        # Admin, Fleet Manager, and Dispatchers have full read access
+        if user_role in ['HOSPITAL_ADMINISTRATOR', 'FLEET_MANAGER', 'DISPATCHER']:
+            return True
+            
+        return False
+
+    def has_object_permission(self, request, view, obj):
+        if request.user.is_superuser:
+            return True
+        user_role = request.user.role.name if request.user.role else None
+        if user_role in ['HOSPITAL_ADMINISTRATOR', 'FLEET_MANAGER', 'DISPATCHER']:
+            return True
+        if user_role == 'DRIVER' and obj.driver and obj.driver.user == request.user:
+            return True
+        return False
+
+
+class TripViewSet(viewsets.ReadOnlyModelViewSet):
+    queryset = Trip.objects.all().order_by('-created_at')
+    serializer_class = TripSerializer
+    permission_classes = [IsAuthenticated, TripPermission]
+
+    def get_queryset(self):
+        user = self.request.user
+        if user.is_superuser:
+            queryset = Trip.objects.all().order_by('-created_at')
+        else:
+            user_role = user.role.name if user.role else None
+            if user_role in ['HOSPITAL_ADMINISTRATOR', 'FLEET_MANAGER', 'DISPATCHER']:
+                queryset = Trip.objects.all().order_by('-created_at')
+            elif user_role == 'DRIVER':
+                if self.action == 'retrieve':
+                    queryset = Trip.objects.all().order_by('-created_at')
+                else:
+                    queryset = Trip.objects.filter(driver__user=user).order_by('-created_at')
+            else:
+                return Trip.objects.none()
+
+        # Filters
+        driver_id = self.request.query_params.get('driver_id')
+        ambulance_id = self.request.query_params.get('ambulance_id')
+        status_param = self.request.query_params.get('status')
+        start_date = self.request.query_params.get('start_date')
+        end_date = self.request.query_params.get('end_date')
+
+        if driver_id:
+            queryset = queryset.filter(driver_id=driver_id)
+        if ambulance_id:
+            queryset = queryset.filter(ambulance_id=ambulance_id)
+        if status_param:
+            queryset = queryset.filter(status=status_param)
+        if start_date:
+            queryset = queryset.filter(start_time__date__gte=start_date)
+        if end_date:
+            queryset = queryset.filter(start_time__date__lte=end_date)
+
+        return queryset
+
+    @action(detail=False, methods=['GET'], url_path='my-trips')
+    def my_trips(self, request):
+        user = request.user
+        user_role = user.role.name if user.role else None
+        if user_role != 'DRIVER':
+            return Response(
+                {"detail": "Only drivers can view their personal trip logs."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        trips = Trip.objects.filter(driver__user=user).order_by('-created_at')
+        
+        status_param = request.query_params.get('status')
+        start_date = request.query_params.get('start_date')
+        end_date = request.query_params.get('end_date')
+        if status_param:
+            trips = trips.filter(status=status_param)
+        if start_date:
+            trips = trips.filter(start_time__date__gte=start_date)
+        if end_date:
+            trips = trips.filter(start_time__date__lte=end_date)
+
+        serializer = self.get_serializer(trips, many=True)
+        return Response(serializer.data)
+
 
 

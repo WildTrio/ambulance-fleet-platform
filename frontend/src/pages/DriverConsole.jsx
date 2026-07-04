@@ -10,6 +10,9 @@ const DriverConsole = () => {
   const [remarks, setRemarks] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [successMsg, setSuccessMsg] = useState('');
+  const [trips, setTrips] = useState([]);
+  const [tripsLoading, setTripsLoading] = useState(false);
+  const [tripsExpanded, setTripsExpanded] = useState(false);
 
   const fetchAssignment = async () => {
     try {
@@ -40,8 +43,21 @@ const DriverConsole = () => {
     }
   };
 
+  const fetchTrips = async () => {
+    setTripsLoading(true);
+    try {
+      const response = await api.get('/trips/my-trips/');
+      setTrips(response.data);
+    } catch (err) {
+      console.error("Error fetching driver trips:", err);
+    } finally {
+      setTripsLoading(false);
+    }
+  };
+
   useEffect(() => {
     fetchAssignment();
+    fetchTrips();
   }, []);
 
   const handleTransition = async (targetStatus) => {
@@ -58,8 +74,9 @@ const DriverConsole = () => {
       setSuccessMsg(`Successfully transitioned to ${targetStatus}`);
       setRemarks('');
       
-      // Refresh assignment & history
+      // Refresh assignment, history & trips
       await fetchAssignment();
+      fetchTrips();
     } catch (err) {
       console.error("Error transitioning status:", err);
       const detail = err.response?.data?.detail || "Failed to transition status.";
@@ -370,6 +387,61 @@ const DriverConsole = () => {
                 </div>
               )}
             </div>
+          </section>
+
+          <section className="driver-card trips-card" style={{ marginTop: '20px' }}>
+            <div className="trips-card-header" onClick={() => setTripsExpanded(!tripsExpanded)} style={{ cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <h3>Past Trips History</h3>
+                <p className="section-subtitle" style={{ margin: 0 }}>Your completed and cancelled trips</p>
+              </div>
+              <button className="expand-toggle-btn" style={{ background: 'none', border: 'none', color: '#6366f1', fontSize: '1.2rem', cursor: 'pointer' }}>
+                {tripsExpanded ? '▲' : '▼'}
+              </button>
+            </div>
+
+            {tripsExpanded && (
+              <div className="trips-list-container" style={{ marginTop: '16px', maxHeight: '400px', overflowY: 'auto' }}>
+                {tripsLoading ? (
+                  <p style={{ color: '#64748b', fontSize: '0.88rem', fontStyle: 'italic' }}>Loading trips...</p>
+                ) : trips.length === 0 ? (
+                  <p style={{ color: '#64748b', fontSize: '0.88rem', fontStyle: 'italic' }}>No past trips recorded.</p>
+                ) : (
+                  <div className="trips-list" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    {trips.map((trip) => (
+                      <div key={trip.id} className="trip-item" style={{ background: 'rgba(255, 255, 255, 0.015)', border: '1px solid rgba(255, 255, 255, 0.04)', borderRadius: '10px', padding: '12px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                          <span className={`status-pill ${trip.status === 'COMPLETED' ? 'badge-ready' : 'badge-sanitization'}`} style={{ fontSize: '0.75rem', padding: '2px 8px', borderRadius: '6px' }}>
+                            {trip.status}
+                          </span>
+                          <span style={{ fontSize: '0.75rem', color: '#64748b' }}>
+                            {trip.start_time ? new Date(trip.start_time).toLocaleDateString() : 'N/A'}
+                          </span>
+                        </div>
+                        <div style={{ display: 'flex', gap: '16px', marginBottom: '8px', fontSize: '0.82rem', color: '#cbd5e1' }}>
+                          <div>
+                            <span style={{ color: '#64748b' }}>Distance:</span> <strong>{trip.distance_km} km</strong>
+                          </div>
+                          <div>
+                            <span style={{ color: '#64748b' }}>Duration:</span> <strong>
+                              {trip.start_time && trip.end_time 
+                                ? `${Math.max(0, Math.round((new Date(trip.end_time) - new Date(trip.start_time)) / 60000))} mins`
+                                : '0 mins'
+                              }
+                            </strong>
+                          </div>
+                        </div>
+                        {trip.summary && (
+                          <p style={{ fontSize: '0.8rem', color: '#94a3b8', background: 'rgba(0,0,0,0.2)', padding: '8px', borderRadius: '6px', margin: 0, fontStyle: 'italic', lineHeight: '1.4' }}>
+                            "{trip.summary}"
+                          </p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </section>
         </div>
       </div>
