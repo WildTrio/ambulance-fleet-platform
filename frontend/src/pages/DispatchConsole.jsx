@@ -119,6 +119,8 @@ const DispatchConsole = () => {
 
   // Handle selected request change to search nearby/recommended ambulances
   useEffect(() => {
+    setDispatchSuccess('');
+    setDispatchError('');
     if (!selectedRequest) {
       setNearbyAmbulances([]);
       setSelectedAmbulance(null);
@@ -270,9 +272,14 @@ const DispatchConsole = () => {
     switch(status) {
       case 'ASSIGNED': return 1;
       case 'EN_ROUTE': return 2;
-      case 'ON_SITE': return 3;
-      case 'TRANSPORTING': return 4;
-      case 'ARRIVED_HOSPITAL': return 5;
+      case 'ON_SITE':
+      case 'AT_INCIDENT': return 3;
+      case 'TRANSPORTING':
+      case 'PATIENT_ONBOARD': return 4;
+      case 'ARRIVED_HOSPITAL':
+      case 'HOSPITAL_ARRIVAL': return 5;
+      case 'SANITIZATION': return 6;
+      case 'READY': return 7;
       default: return 1;
     }
   };
@@ -616,20 +623,26 @@ const DispatchConsole = () => {
                           <div className={`step-line ${step >= 2 ? 'completed' : ''}`}></div>
                           <div className={`step-dot ${step >= 2 ? 'completed' : ''}`} title="En Route"></div>
                           <div className={`step-line ${step >= 3 ? 'completed' : ''}`}></div>
-                          <div className={`step-dot ${step >= 3 ? 'completed' : ''}`} title="On Site"></div>
+                          <div className={`step-dot ${step >= 3 ? 'completed' : ''}`} title="At Incident"></div>
                           <div className={`step-line ${step >= 4 ? 'completed' : ''}`}></div>
-                          <div className={`step-dot ${step >= 4 ? 'completed' : ''}`} title="Transporting"></div>
+                          <div className={`step-dot ${step >= 4 ? 'completed' : ''}`} title="Patient Onboard"></div>
                           <div className={`step-line ${step >= 5 ? 'completed' : ''}`}></div>
-                          <div className={`step-dot ${step >= 5 ? 'completed' : ''}`} title="Arrived Hospital"></div>
+                          <div className={`step-dot ${step >= 5 ? 'completed' : ''}`} title="Hospital Arrival"></div>
+                          <div className={`step-line ${step >= 6 ? 'completed' : ''}`}></div>
+                          <div className={`step-dot ${step >= 6 ? 'completed' : ''}`} title="Sanitization"></div>
+                          <div className={`step-line ${step >= 7 ? 'completed' : ''}`}></div>
+                          <div className={`step-dot ${step >= 7 ? 'completed' : ''}`} title="Ready"></div>
                         </div>
 
                         {/* status step labels */}
                         <div className="step-labels">
                           <span>Assigned</span>
                           <span>En Route</span>
-                          <span>On Site</span>
-                          <span>Transport</span>
+                          <span>At Incident</span>
+                          <span>Onboard</span>
                           <span>Hospital</span>
+                          <span>Sanitize</span>
+                          <span>Ready</span>
                         </div>
                       </div>
 
@@ -646,33 +659,49 @@ const DispatchConsole = () => {
                         {mission.status === 'EN_ROUTE' && (
                           <button 
                             className="mission-transition-btn onscene-btn"
-                            onClick={() => handleTransitionMission(mission.id, 'ON_SITE')}
+                            onClick={() => handleTransitionMission(mission.id, 'AT_INCIDENT')}
                           >
-                            Arrived on Scene
+                            Arrived on Scene (At Incident)
                           </button>
                         )}
-                        {mission.status === 'ON_SITE' && (
+                        {(mission.status === 'AT_INCIDENT' || mission.status === 'ON_SITE') && (
                           <button 
                             className="mission-transition-btn transport-btn"
-                            onClick={() => handleTransitionMission(mission.id, 'TRANSPORTING')}
+                            onClick={() => handleTransitionMission(mission.id, 'PATIENT_ONBOARD')}
                           >
-                            Transport Patient
+                            Patient Onboard
                           </button>
                         )}
-                        {mission.status === 'TRANSPORTING' && (
+                        {(mission.status === 'PATIENT_ONBOARD' || mission.status === 'TRANSPORTING') && (
                           <button 
                             className="mission-transition-btn hospital-btn"
-                            onClick={() => handleTransitionMission(mission.id, 'ARRIVED_HOSPITAL')}
+                            onClick={() => handleTransitionMission(mission.id, 'HOSPITAL_ARRIVAL')}
                           >
-                            Arrived Hospital
+                            Arrived Hospital (Hospital Arrival)
                           </button>
                         )}
-                        {mission.status === 'ARRIVED_HOSPITAL' && (
+                        {(mission.status === 'HOSPITAL_ARRIVAL' || mission.status === 'ARRIVED_HOSPITAL') && (
+                          <button 
+                            className="mission-transition-btn sanitize-btn"
+                            onClick={() => handleTransitionMission(mission.id, 'SANITIZATION')}
+                          >
+                            Begin Sanitization
+                          </button>
+                        )}
+                        {mission.status === 'SANITIZATION' && (
+                          <button 
+                            className="mission-transition-btn ready-btn"
+                            onClick={() => handleTransitionMission(mission.id, 'READY')}
+                          >
+                            Sanitization Complete (Ready)
+                          </button>
+                        )}
+                        {mission.status === 'READY' && (
                           <button 
                             className="mission-transition-btn complete-btn"
                             onClick={() => handleTransitionMission(mission.id, 'COMPLETED')}
                           >
-                            Complete Mission
+                            Complete Mission (Available)
                           </button>
                         )}
 

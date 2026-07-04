@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Hospital, Station, Ambulance, Driver, DriverAssignment, AmbulanceOperationalHistory, Shift, Certification, EmergencyRequest, Mission, Equipment
+from .models import Hospital, Station, Ambulance, Driver, DriverAssignment, AmbulanceOperationalHistory, AmbulanceLifecycleLog, Shift, Certification, EmergencyRequest, Mission, Equipment
 from authentication.serializers import UserSerializer
 
 class HospitalSerializer(serializers.ModelSerializer):
@@ -150,6 +150,13 @@ class AmbulanceOperationalHistorySerializer(serializers.ModelSerializer):
         model = AmbulanceOperationalHistory
         fields = ['id', 'event_type', 'old_value', 'new_value', 'changed_by', 'changed_at', 'remarks']
 
+class AmbulanceLifecycleLogSerializer(serializers.ModelSerializer):
+    changed_by = serializers.CharField(source='changed_by.email', read_only=True)
+
+    class Meta:
+        model = AmbulanceLifecycleLog
+        fields = ['id', 'from_status', 'to_status', 'changed_by', 'changed_at', 'remarks']
+
 class EquipmentSerializer(serializers.ModelSerializer):
     class Meta:
         model = Equipment
@@ -176,7 +183,7 @@ class AmbulanceSerializer(serializers.ModelSerializer):
         model = Ambulance
         fields = [
             'id', 'ambulance_number', 'hospital_id', 'hospital',
-            'station_id', 'station', 'type', 'status', 'active_driver', 'active_mission',
+            'station_id', 'station', 'type', 'status', 'lifecycle_status', 'active_driver', 'active_mission',
             'equipment'
         ]
 
@@ -198,7 +205,10 @@ class AmbulanceSerializer(serializers.ModelSerializer):
             return {
                 'id': mission.id,
                 'status': mission.status,
-                'emergency_type': mission.emergency_request.emergency_type
+                'emergency_type': mission.emergency_request.emergency_type,
+                'requester_name': mission.emergency_request.requester_name,
+                'pickup_location': mission.emergency_request.pickup_location,
+                'priority': mission.emergency_request.priority
             }
         return None
 
@@ -422,6 +432,10 @@ class MissionSerializer(serializers.ModelSerializer):
                 status='ASSIGNED'
             )
             
+            # Transition ambulance lifecycle status
+            user = self.context['request'].user if 'request' in self.context else None
+            amb.transition_to('ASSIGNED', user=user, remarks="Assigned on dispatch.", mission=mission)
+            
             # Update EmergencyRequest status to ASSIGNED
             req.status = 'ASSIGNED'
             req.save()
@@ -430,6 +444,8 @@ class MissionSerializer(serializers.ModelSerializer):
 
     def update(self, instance, validated_data):
         from django.db import transaction
+        from django.core.exceptions import ValidationError as DjangoValidationError
+        from rest_framework.exceptions import ValidationError as DRFValidationError
         
         new_status = validated_data.get('status', instance.status)
         old_status = instance.status
@@ -438,22 +454,56 @@ class MissionSerializer(serializers.ModelSerializer):
             return instance
             
         with transaction.atomic():
-            instance.status = new_status
+            req = instance.emergency_request
+            amb = instance.ambulance
+            user = self.context['request'].user if 'request' in self.context else None
+            remarks = validated_data.get('remarks', f"Mission transitioned from {old_status} to {new_status}.")
+            
+            if new_status == 'COMPLETED':
+                amb_target_status = 'AVAILABLE'
+            elif new_status == 'CANCELLED':
+                if amb.lifecycle_status in ['PATIENT_ONBOARD', 'HOSPITAL_ARRIVAL']:
+                    amb_target_status = 'SANITIZATION'
+                else:
+                    amb_target_status = 'AVAILABLE'
+            else:
+                status_mapping = {
+                    'ON_SITE': 'AT_INCIDENT',
+                    'TRANSPORTING': 'PATIENT_ONBOARD',
+                    'ARRIVED_HOSPITAL': 'HOSPITAL_ARRIVAL'
+                }
+                amb_target_status = status_mapping.get(new_status, new_status)
+                
+            try:
+                amb.transition_to(amb_target_status, user=user, remarks=remarks, mission=instance)
+            except DjangoValidationError as e:
+                # Format to a nice validation error message
+                message = e.message if hasattr(e, 'message') else str(e)
+                raise DRFValidationError(detail={"status": message})
+            
+            normalized_mission_status = new_status
+            if new_status == 'ON_SITE':
+                normalized_mission_status = 'AT_INCIDENT'
+            elif new_status == 'TRANSPORTING':
+                normalized_mission_status = 'PATIENT_ONBOARD'
+            elif new_status == 'ARRIVED_HOSPITAL':
+                normalized_mission_status = 'HOSPITAL_ARRIVAL'
+                
+            instance.status = normalized_mission_status
             instance.save()
             
-            req = instance.emergency_request
-            
             # Align EmergencyRequest status
-            if new_status == 'COMPLETED':
+            if normalized_mission_status == 'COMPLETED':
                 req.status = 'COMPLETED'
                 req.save()
-            elif new_status == 'CANCELLED':
-                # Revert to PENDING so it can be dispatched again
+            elif normalized_mission_status == 'CANCELLED':
                 req.status = 'PENDING'
                 req.save()
             else:
-                # EN_ROUTE, ON_SITE, TRANSPORTING, ARRIVED_HOSPITAL
-                req.status = 'IN_PROGRESS'
+                if normalized_mission_status == 'ASSIGNED':
+                    req.status = 'ASSIGNED'
+                else:
+                    req.status = 'IN_PROGRESS'
                 req.save()
                 
         return instance

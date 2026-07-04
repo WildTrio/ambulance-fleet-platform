@@ -14,10 +14,10 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 
-from .models import Hospital, Station, Ambulance, Driver, DriverAssignment, AmbulanceOperationalHistory, Shift, Certification, EmergencyRequest, Mission, Equipment
+from .models import Hospital, Station, Ambulance, Driver, DriverAssignment, AmbulanceOperationalHistory, AmbulanceLifecycleLog, Shift, Certification, EmergencyRequest, Mission, Equipment
 from .serializers import (
     HospitalSerializer, StationSerializer, DriverSerializer,
-    AmbulanceSerializer, AmbulanceOperationalHistorySerializer,
+    AmbulanceSerializer, AmbulanceOperationalHistorySerializer, AmbulanceLifecycleLogSerializer,
     AssignDriverSerializer, TransferStationSerializer, ChangeStatusSerializer,
     ShiftSerializer, CertificationSerializer, EmergencyRequestSerializer,
     MissionSerializer, EquipmentSerializer
@@ -36,6 +36,10 @@ class AmbulancePermission(permissions.BasePermission):
             return True
         
         user_role = request.user.role.name if request.user.role else None
+
+        # Actions allowed for DRIVER: transition_lifecycle, lifecycle_history, my_assignment
+        if view.action in ['transition_lifecycle', 'lifecycle_history', 'my_assignment']:
+            return user_role in ['HOSPITAL_ADMINISTRATOR', 'FLEET_MANAGER', 'DISPATCHER', 'DRIVER']
 
         # Read actions (Safe methods + history action + assign_driver action)
         if request.method in permissions.SAFE_METHODS or view.action in ['history', 'assign_driver']:
@@ -81,7 +85,7 @@ class AmbulanceViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        ambulances = Ambulance.objects.all()
+        ambulances = Ambulance.objects.all().order_by('ambulance_number')
         routing_results = self._get_ambulances_with_distances(lat, lon, ambulances)
 
         results = []
@@ -662,6 +666,116 @@ class AmbulanceViewSet(viewsets.ModelViewSet):
         history = ambulance.operational_history.all().order_by('-changed_at')
         serializer = self.get_serializer(history, many=True)
         return Response(serializer.data)
+
+    @action(detail=True, methods=['POST'], url_path='transition-lifecycle')
+    def transition_lifecycle(self, request, pk=None):
+        from django.core.exceptions import ValidationError as DjangoValidationError
+        ambulance = self.get_object()
+        
+        active_assignment = ambulance.assignments.filter(end_time__isnull=True).first()
+        is_assigned_driver = active_assignment and active_assignment.driver and active_assignment.driver.user == request.user
+        
+        user_role = request.user.role.name if request.user.role else None
+        
+        if user_role not in ['HOSPITAL_ADMINISTRATOR', 'DISPATCHER'] and not is_assigned_driver:
+            return Response(
+                {"detail": "You do not have permission to transition this ambulance's lifecycle status."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+            
+        new_status = request.data.get('status')
+        remarks = request.data.get('remarks', '')
+        
+        if not new_status:
+            return Response(
+                {"detail": "status is a required field."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+            
+        if new_status == 'AVAILABLE' and ambulance.lifecycle_status != 'READY' and user_role == 'DRIVER':
+            return Response(
+                {"detail": "Drivers are not authorized to cancel or abort active missions. Please contact a Dispatcher."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+            
+        from .models import Mission
+        active_mission = ambulance.missions.exclude(status__in=['COMPLETED', 'CANCELLED']).first()
+        
+        with transaction.atomic():
+            try:
+                target_status = 'AVAILABLE' if new_status == 'READY' else new_status
+                ambulance.transition_to(target_status, user=request.user, remarks=remarks, mission=active_mission)
+            except DjangoValidationError as e:
+                message = e.message if hasattr(e, 'message') else str(e)
+                return Response({"detail": message}, status=status.HTTP_400_BAD_REQUEST)
+            
+            if active_mission:
+                if new_status == 'READY':
+                    active_mission.status = 'COMPLETED'
+                    active_mission.save()
+                    req = active_mission.emergency_request
+                    req.status = 'COMPLETED'
+                    req.save()
+                elif new_status == 'AVAILABLE':
+                    active_mission.status = 'CANCELLED'
+                    active_mission.save()
+                    req = active_mission.emergency_request
+                    req.status = 'PENDING'
+                    req.save()
+                elif new_status in ['ASSIGNED', 'EN_ROUTE', 'AT_INCIDENT', 'PATIENT_ONBOARD', 'HOSPITAL_ARRIVAL', 'SANITIZATION']:
+                    active_mission.status = new_status
+                    active_mission.save()
+                    req = active_mission.emergency_request
+                    if new_status == 'ASSIGNED':
+                        req.status = 'ASSIGNED'
+                    else:
+                        req.status = 'IN_PROGRESS'
+                    req.save()
+                    
+        return Response({
+            "detail": "Ambulance lifecycle status updated successfully.",
+            "lifecycle_status": ambulance.lifecycle_status
+        })
+
+    @action(detail=True, methods=['GET'], url_path='lifecycle-history', serializer_class=AmbulanceLifecycleLogSerializer)
+    def lifecycle_history(self, request, pk=None):
+        ambulance = self.get_object()
+        
+        active_assignment = ambulance.assignments.filter(end_time__isnull=True).first()
+        is_assigned_driver = active_assignment and active_assignment.driver and active_assignment.driver.user == request.user
+        
+        user_role = request.user.role.name if request.user.role else None
+        
+        if user_role not in ['HOSPITAL_ADMINISTRATOR', 'DISPATCHER', 'FLEET_MANAGER'] and not is_assigned_driver:
+            return Response(
+                {"detail": "You do not have permission to view this ambulance's lifecycle history."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+            
+        logs = ambulance.lifecycle_logs.all().order_by('-changed_at')
+        serializer = self.get_serializer(logs, many=True)
+        return Response(serializer.data)
+
+    @action(detail=False, methods=['GET'], url_path='my-assignment')
+    def my_assignment(self, request):
+        try:
+            driver = Driver.objects.get(user=request.user)
+        except Driver.DoesNotExist:
+            return Response(
+                {"detail": "You are not registered as a driver."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+            
+        assignment = driver.assignments.filter(end_time__isnull=True).first()
+        if not assignment:
+            return Response(
+                {"detail": "No active ambulance assignment found."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+            
+        serializer = self.get_serializer(assignment.ambulance)
+        return Response(serializer.data)
+
 
 class HospitalViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = Hospital.objects.all().order_by('hospital_name')

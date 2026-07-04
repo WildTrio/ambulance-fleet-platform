@@ -63,6 +63,14 @@ A secure, role-restricted web platform for managing hospital ambulance fleets, d
   * Added search filters to the Dispatch Console to sort recommendation lists by Max Distance, Ambulance Type, Driver Assigned status, and comma-separated Required Equipment.
   * Displays color-coded score breakdowns and available equipment badges on each ambulance card in the Dispatch Console and Fleet Management view.
 
+### Phase 7: Ambulance Lifecycle Tracking
+* **Driver Command Console**: A mobile-responsive control page enabling drivers to view active mission details (patient name, priority, coordinates) and advance the vehicle's state with single-click actions.
+* **State Transition Engine**: A strict machine state engine managing the operational lifecycle (`AVAILABLE` ➔ `ASSIGNED` ➔ `EN_ROUTE` ➔ `AT_INCIDENT` ➔ `PATIENT_ONBOARD` ➔ `HOSPITAL_ARRIVAL` ➔ `SANITIZATION` ➔ `READY` ➔ `AVAILABLE`).
+* **Sanitization Auto-Maintenance**: Seamlessly switches the ambulance's administrative status to `MAINTENANCE` during `SANITIZATION` to exclude it from new dispatch lists, restoring it to `ACTIVE` when sanitization is finished.
+* **One-Click Mission Auto-Completion**: Transitioning to the `READY` state completes the active mission and citizen request, returning the vehicle directly to `AVAILABLE` (standby) status.
+* **Driver Safety locks**: Disallows drivers from aborting or cancelling active missions on their own (only dispatchers/admins can perform cancellations).
+* **Audit Trail Log**: Chronological timeline of operational status logs tracking the changing users, timestamps, and custom remarks (e.g., sanitization notes).
+
 ---
 
 ## 💻 Running the Project Locally
@@ -117,7 +125,9 @@ All mock accounts are preseeded with the password **`Password123`**:
 * **Hospital Admin**: `admin@hospital.org` (Full Write Access)
 * **Fleet Manager**: `fleet@hospital.org` (Full Write Access)
 * **Dispatcher**: `dispatcher@hospital.org` (Read-Only Access)
-* **Driver**: `driver@hospital.org` (No Fleet Access)
+* **Driver (David)**: `driver@hospital.org` (No Fleet Access)
+* **Driver (Bob)**: `driver2@hospital.org` (No Fleet Access)
+* **Driver (Rahul)**: `driver3@hospital.org` (No Fleet Access)
 * **Emergency Requestor**: `citizen@gmail.com` (No Fleet Access)
 
 ---

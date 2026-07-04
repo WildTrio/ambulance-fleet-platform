@@ -43,16 +43,73 @@ class Ambulance(models.Model):
         ('INACTIVE', 'Inactive'),
     ]
 
+    LIFECYCLE_STATUS_CHOICES = [
+        ('AVAILABLE', 'Available'),
+        ('ASSIGNED', 'Assigned'),
+        ('EN_ROUTE', 'En Route'),
+        ('AT_INCIDENT', 'At Incident'),
+        ('PATIENT_ONBOARD', 'Patient Onboard'),
+        ('HOSPITAL_ARRIVAL', 'Hospital Arrival'),
+        ('SANITIZATION', 'Sanitization'),
+        ('READY', 'Ready'),
+    ]
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     ambulance_number = models.CharField(max_length=50, unique=True)
     hospital = models.ForeignKey(Hospital, on_delete=models.PROTECT, related_name='ambulances')
     station = models.ForeignKey(Station, on_delete=models.SET_NULL, null=True, blank=True, related_name='ambulances')
     type = models.CharField(max_length=50, choices=AMBULANCE_TYPES, default='Basic Life Support')
     status = models.CharField(max_length=50, choices=STATUS_CHOICES, default='ACTIVE')
+    lifecycle_status = models.CharField(max_length=50, choices=LIFECYCLE_STATUS_CHOICES, default='AVAILABLE')
     equipment = models.ManyToManyField(Equipment, blank=True, related_name='ambulances')
 
     def __str__(self):
-        return f"{self.ambulance_number} ({self.status})"
+        return f"{self.ambulance_number} ({self.status}) [{self.lifecycle_status}]"
+
+    def transition_to(self, new_status, user=None, remarks=None, mission=None):
+        from django.core.exceptions import ValidationError
+        from .models import AmbulanceLifecycleLog
+        old_status = self.lifecycle_status
+        if old_status == new_status:
+            return self
+
+        # Allow transition if the vehicle was in SANITIZATION (which sets self.status to MAINTENANCE)
+        if self.status in ['MAINTENANCE', 'INACTIVE'] and old_status != 'SANITIZATION':
+            raise ValidationError(f"Cannot transition status of an ambulance that is {self.status}.")
+
+        transitions = {
+            'AVAILABLE': ['ASSIGNED'],
+            'ASSIGNED': ['EN_ROUTE', 'AVAILABLE'],
+            'EN_ROUTE': ['AT_INCIDENT', 'AVAILABLE'],
+            'AT_INCIDENT': ['PATIENT_ONBOARD', 'AVAILABLE'],
+            'PATIENT_ONBOARD': ['HOSPITAL_ARRIVAL', 'SANITIZATION', 'AVAILABLE'],
+            'HOSPITAL_ARRIVAL': ['SANITIZATION', 'AVAILABLE'],
+            'SANITIZATION': ['READY', 'AVAILABLE'],
+            'READY': ['AVAILABLE'],
+        }
+
+        if new_status not in transitions.get(old_status, []):
+            raise ValidationError(f"Cannot transition operational status from {old_status} to {new_status}.")
+
+        # If entering sanitization, update administrative status to MAINTENANCE
+        if new_status == 'SANITIZATION':
+            self.status = 'MAINTENANCE'
+        # If exiting sanitization (moving to READY or AVAILABLE), restore status to ACTIVE
+        elif old_status == 'SANITIZATION':
+            self.status = 'ACTIVE'
+
+        self.lifecycle_status = new_status
+        self.save()
+
+        AmbulanceLifecycleLog.objects.create(
+            ambulance=self,
+            mission=mission,
+            from_status=old_status,
+            to_status=new_status,
+            changed_by=user,
+            remarks=remarks
+        )
+        return self
 
 class Driver(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -94,6 +151,19 @@ class AmbulanceOperationalHistory(models.Model):
 
     def __str__(self):
         return f"{self.ambulance.ambulance_number} - {self.event_type} @ {self.changed_at}"
+
+class AmbulanceLifecycleLog(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    ambulance = models.ForeignKey(Ambulance, on_delete=models.CASCADE, related_name='lifecycle_logs')
+    mission = models.ForeignKey('Mission', on_delete=models.SET_NULL, null=True, blank=True, related_name='lifecycle_logs')
+    from_status = models.CharField(max_length=50, null=True, blank=True)
+    to_status = models.CharField(max_length=50)
+    changed_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name='lifecycle_actions')
+    changed_at = models.DateTimeField(auto_now_add=True)
+    remarks = models.TextField(null=True, blank=True)
+
+    def __str__(self):
+        return f"{self.ambulance.ambulance_number}: {self.from_status} -> {self.to_status} @ {self.changed_at}"
 
 class Shift(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -160,9 +230,11 @@ class Mission(models.Model):
     MISSION_STATUS_CHOICES = [
         ('ASSIGNED', 'Assigned'),
         ('EN_ROUTE', 'En Route'),
-        ('ON_SITE', 'On Site'),
-        ('TRANSPORTING', 'Transporting'),
-        ('ARRIVED_HOSPITAL', 'Arrived at Hospital'),
+        ('AT_INCIDENT', 'At Incident'),
+        ('PATIENT_ONBOARD', 'Patient Onboard'),
+        ('HOSPITAL_ARRIVAL', 'Hospital Arrival'),
+        ('SANITIZATION', 'Sanitization'),
+        ('READY', 'Ready'),
         ('COMPLETED', 'Completed'),
         ('CANCELLED', 'Cancelled'),
     ]

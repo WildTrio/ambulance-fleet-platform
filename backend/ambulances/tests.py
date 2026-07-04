@@ -952,6 +952,102 @@ class DispatchConsoleMissionTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("Cannot delete ambulance while it is on an active mission.", response.data['non_field_errors'][0])
 
+    def test_ambulance_lifecycle_transitions_and_sync(self):
+        # 1. Dispatch creates mission, ambulance transitions to ASSIGNED
+        self.client.force_authenticate(user=self.disp_user)
+        url = reverse('mission-list')
+        data = {
+            "emergency_request_id": str(self.req1.id),
+            "ambulance_id": str(self.amb1.id)
+        }
+        response = self.client.post(url, data, format='json')
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        mission_id = response.data['id']
+        
+        self.amb1.refresh_from_db()
+        self.assertEqual(self.amb1.lifecycle_status, 'ASSIGNED')
+
+        # 2. Check transition-lifecycle endpoint (Driver transitions to EN_ROUTE)
+        transition_url = reverse('ambulance-transition-lifecycle', kwargs={'pk': str(self.amb1.id)})
+        self.client.force_authenticate(user=self.driver_user)
+        
+        # Valid transition
+        response = self.client.post(transition_url, {"status": "EN_ROUTE", "remarks": "Driving to scene"}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.amb1.refresh_from_db()
+        self.assertEqual(self.amb1.lifecycle_status, 'EN_ROUTE')
+        
+        # Sync: Mission status should be EN_ROUTE, Request status should be IN_PROGRESS
+        mission = Mission.objects.get(id=mission_id)
+        self.assertEqual(mission.status, 'EN_ROUTE')
+        self.req1.refresh_from_db()
+        self.assertEqual(self.req1.status, 'IN_PROGRESS')
+
+        # 3. Invalid transition: cannot transition directly from EN_ROUTE to PATIENT_ONBOARD
+        response = self.client.post(transition_url, {"status": "PATIENT_ONBOARD"}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        
+        # 4. Sequential transitions
+        # EN_ROUTE -> AT_INCIDENT
+        response = self.client.post(transition_url, {"status": "AT_INCIDENT"}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        # AT_INCIDENT -> PATIENT_ONBOARD
+        response = self.client.post(transition_url, {"status": "PATIENT_ONBOARD"}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        # PATIENT_ONBOARD -> HOSPITAL_ARRIVAL
+        response = self.client.post(transition_url, {"status": "HOSPITAL_ARRIVAL"}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        # HOSPITAL_ARRIVAL -> SANITIZATION
+        response = self.client.post(transition_url, {"status": "SANITIZATION"}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        # SANITIZATION -> READY (automatically transitions to AVAILABLE and completes mission)
+        response = self.client.post(transition_url, {"status": "READY"}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        
+        self.amb1.refresh_from_db()
+        self.assertEqual(self.amb1.lifecycle_status, 'AVAILABLE')
+        mission.refresh_from_db()
+        self.assertEqual(mission.status, 'COMPLETED')
+        self.req1.refresh_from_db()
+        self.assertEqual(self.req1.status, 'COMPLETED')
+
+        # 6. Verify timeline history log was populated
+        history_url = reverse('ambulance-lifecycle-history', kwargs={'pk': str(self.amb1.id)})
+        response = self.client.get(history_url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertTrue(len(response.data) > 0)
+        # Sort history: logs are sorted newest first, so last transition (to AVAILABLE) is first
+        self.assertEqual(response.data[0]['to_status'], 'AVAILABLE')
+
+    def test_lifecycle_transition_rbac(self):
+        # Create mission
+        Mission.objects.create(
+            emergency_request=self.req1,
+            ambulance=self.amb1,
+            driver=self.driver1,
+            status='ASSIGNED'
+        )
+        self.amb1.lifecycle_status = 'ASSIGNED'
+        self.amb1.save()
+        
+        transition_url = reverse('ambulance-transition-lifecycle', kwargs={'pk': str(self.amb1.id)})
+        
+        # Fleet manager has no access to transition (only dispatcher, admin, assigned driver)
+        self.client.force_authenticate(user=self.fleet_user)
+        response = self.client.post(transition_url, {"status": "EN_ROUTE"}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        
+        # Unassigned driver has no access to transition
+        other_driver_user = User.objects.create_user(email='driver2@h.org', name='Driver 2', password='Password123!', role=self.driver_role)
+        self.client.force_authenticate(user=other_driver_user)
+        response = self.client.post(transition_url, {"status": "EN_ROUTE"}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        
+        # Dispatcher has access
+        self.client.force_authenticate(user=self.disp_user)
+        response = self.client.post(transition_url, {"status": "EN_ROUTE"}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
 
 
 
