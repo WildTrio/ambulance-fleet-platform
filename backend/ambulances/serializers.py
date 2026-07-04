@@ -513,13 +513,22 @@ class TripSerializer(serializers.ModelSerializer):
     ambulance = serializers.SerializerMethodField()
     driver = serializers.SerializerMethodField()
     mission = serializers.SerializerMethodField()
+    
+    ambulance_number = serializers.SerializerMethodField()
+    driver_name = serializers.SerializerMethodField()
+    station_name = serializers.SerializerMethodField()
+    hospital_name = serializers.SerializerMethodField()
+    patient_name = serializers.SerializerMethodField()
+    emergency_type = serializers.SerializerMethodField()
 
     class Meta:
         model = Trip
         fields = [
             'id', 'mission', 'ambulance', 'driver', 'status',
             'start_time', 'end_time', 'distance_km', 'summary',
-            'created_at', 'updated_at'
+            'created_at', 'updated_at',
+            'ambulance_number', 'driver_name', 'station_name',
+            'hospital_name', 'patient_name', 'emergency_type'
         ]
         read_only_fields = ['id', 'created_at', 'updated_at']
 
@@ -551,6 +560,24 @@ class TripSerializer(serializers.ModelSerializer):
                 } if obj.mission.emergency_request else None
             }
         return None
+
+    def get_ambulance_number(self, obj):
+        return obj.ambulance.ambulance_number if obj.ambulance else None
+
+    def get_driver_name(self, obj):
+        return obj.driver.user.name if obj.driver and obj.driver.user else None
+
+    def get_station_name(self, obj):
+        return obj.ambulance.station.station_name if obj.ambulance and obj.ambulance.station else 'N/A'
+
+    def get_hospital_name(self, obj):
+        return obj.ambulance.hospital.hospital_name if obj.ambulance and obj.ambulance.hospital else 'N/A'
+
+    def get_patient_name(self, obj):
+        return obj.mission.emergency_request.requester_name if obj.mission and obj.mission.emergency_request else 'N/A'
+
+    def get_emergency_type(self, obj):
+        return obj.mission.emergency_request.emergency_type if obj.mission and obj.mission.emergency_request else 'N/A'
 
 
 
