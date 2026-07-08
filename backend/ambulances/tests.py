@@ -1256,6 +1256,130 @@ class DigitalTripManagementTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
 
+class GPSTrackingTests(APITestCase):
+    def setUp(self):
+        # Setup roles
+        self.admin_role, _ = Role.objects.get_or_create(name='HOSPITAL_ADMINISTRATOR')
+        self.disp_role, _ = Role.objects.get_or_create(name='DISPATCHER')
+        self.driver_role, _ = Role.objects.get_or_create(name='DRIVER')
+
+        # Setup users
+        self.admin_user = User.objects.create_user(email='admin_gps@h.org', name='Admin', password='Password123!', role=self.admin_role)
+        self.disp_user = User.objects.create_user(email='disp_gps@h.org', name='Dispatcher', password='Password123!', role=self.disp_role)
+        self.driver_user = User.objects.create_user(email='driver_gps@h.org', name='Rahul Driver', password='Password123!', role=self.driver_role)
+        self.driver_user2 = User.objects.create_user(email='driver2_gps@h.org', name='Bob Driver', password='Password123!', role=self.driver_role)
+
+        self.hosp = Hospital.objects.create(hospital_name="City Hospital", address="123 Main St", city="City", state="ST", contact_number="555-0199")
+        self.station = Station.objects.create(hospital=self.hosp, station_name="North Station", latitude=40.7128, longitude=-74.0060)
+        self.amb = Ambulance.objects.create(ambulance_number="AMB-500", hospital=self.hosp, station=self.station, type='Basic Life Support', status='ACTIVE')
+        
+        self.driver1 = Driver.objects.create(user=self.driver_user, license_number="DL-100-GPS", contact="111-222-3333", availability=True)
+        self.driver2 = Driver.objects.create(user=self.driver_user2, license_number="DL-200-GPS", contact="111-222-4444", availability=True)
+
+        # Assign driver1 to ambulance
+        DriverAssignment.objects.create(driver=self.driver1, ambulance=self.amb)
+        self.driver1.availability = False
+        self.driver1.save()
+
+        # Emergency Request
+        self.req = EmergencyRequest.objects.create(
+            requester_name="John Requestor", contact_number="555-0100", emergency_type="Cardiac Arrest",
+            priority="CRITICAL", pickup_location="Times Square", latitude=40.7300, longitude=-73.9800,
+            status='PENDING', created_by=self.disp_user
+        )
+
+    def test_update_location_assigned_driver(self):
+        # 1. Dispatch driver -> Creates active mission & active trip
+        self.client.force_authenticate(user=self.disp_user)
+        response = self.client.post(reverse('mission-list'), {
+            "emergency_request_id": str(self.req.id),
+            "ambulance_id": str(self.amb.id),
+            "driver_id": str(self.driver1.id)
+        }, format='json')
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        mission_id = response.data['id']
+        trip = Trip.objects.get(mission_id=mission_id)
+
+        # 2. Driver posts location update
+        self.client.force_authenticate(user=self.driver_user)
+        url = reverse('ambulance-update-location', kwargs={'pk': str(self.amb.id)})
+        data = {
+            "latitude": 40.7150,
+            "longitude": -74.0010
+        }
+        response = self.client.post(url, data, format='json')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['current_latitude'], 40.7150)
+        self.assertEqual(response.data['current_longitude'], -74.0010)
+        self.assertEqual(response.data['trip_id'], str(trip.id))
+
+        # Check model fields
+        self.amb.refresh_from_db()
+        self.assertEqual(float(self.amb.current_latitude), 40.7150)
+        self.assertEqual(float(self.amb.current_longitude), -74.0010)
+
+        # Check GPSLog creation
+        gps_logs = self.amb.gps_logs.all()
+        self.assertEqual(gps_logs.count(), 1)
+        self.assertEqual(gps_logs.first().trip, trip)
+        self.assertEqual(float(gps_logs.first().latitude), 40.7150)
+
+    def test_update_location_permissions(self):
+        # Unassigned driver tries to update
+        self.client.force_authenticate(user=self.driver_user2)
+        url = reverse('ambulance-update-location', kwargs={'pk': str(self.amb.id)})
+        data = {"latitude": 40.7150, "longitude": -74.0010}
+        response = self.client.post(url, data, format='json')
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+        # Dispatcher tries to update -> allowed
+        self.client.force_authenticate(user=self.disp_user)
+        response = self.client.post(url, data, format='json')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+    def test_mission_route_endpoint(self):
+        self.client.force_authenticate(user=self.disp_user)
+        response = self.client.post(reverse('mission-list'), {
+            "emergency_request_id": str(self.req.id),
+            "ambulance_id": str(self.amb.id),
+            "driver_id": str(self.driver1.id)
+        }, format='json')
+        mission_id = response.data['id']
+
+        # Get route
+        self.client.force_authenticate(user=self.driver_user)
+        route_url = reverse('mission-route', kwargs={'pk': mission_id})
+        response = self.client.get(route_url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn("route", response.data)
+        self.assertIn("distance_km", response.data)
+        self.assertIn("eta_minutes", response.data)
+        self.assertIn("destination", response.data)
+
+    def test_trip_route_history(self):
+        self.client.force_authenticate(user=self.disp_user)
+        response = self.client.post(reverse('mission-list'), {
+            "emergency_request_id": str(self.req.id),
+            "ambulance_id": str(self.amb.id),
+            "driver_id": str(self.driver1.id)
+        }, format='json')
+        mission_id = response.data['id']
+        trip = Trip.objects.get(mission_id=mission_id)
+
+        # Update location to add log
+        self.client.force_authenticate(user=self.driver_user)
+        url = reverse('ambulance-update-location', kwargs={'pk': str(self.amb.id)})
+        self.client.post(url, {"latitude": 40.7150, "longitude": -74.0010}, format='json')
+
+        # Get route history
+        history_url = reverse('trip-route-history', kwargs={'pk': str(trip.id)})
+        response = self.client.get(history_url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data), 1)
+        self.assertEqual(float(response.data[0]['latitude']), 40.7150)
+
+
+
 
 
 

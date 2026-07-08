@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import api from '../services/api';
 import './DispatchConsole.css';
 import { useAuth } from '../context/AuthContext';
@@ -248,6 +248,169 @@ const DispatchConsole = () => {
       alert(err.response?.data?.detail || "Failed to update mission status.");
     }
   };
+
+  // Map and Tracking States
+  const mapRef = useRef(null);
+  const markersRef = useRef(null);
+  const routeRef = useRef(null);
+  const hasFittedBoundsRef = useRef(false);
+  const hasFittedRouteRef = useRef(false);
+  const [activeTrackedMission, setActiveTrackedMission] = useState(null);
+  const [trackedMissionRoute, setTrackedMissionRoute] = useState(null);
+
+  // Reset auto-fitting flags when selections change
+  useEffect(() => {
+    hasFittedBoundsRef.current = false;
+  }, [selectedRequest?.id, selectedAmbulance?.id, activeTrackedMission?.id]);
+
+  useEffect(() => {
+    hasFittedRouteRef.current = false;
+  }, [activeTrackedMission?.id]);
+
+  // Initialize Map
+  useEffect(() => {
+    if (!isAuthorized || !window.L) return;
+    const mapContainer = document.getElementById('dispatch-map');
+    if (!mapContainer) return;
+
+    if (!mapRef.current) {
+      const map = window.L.map('dispatch-map').setView([21.820600, 75.609400], 12);
+      window.L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '© OpenStreetMap contributors'
+      }).addTo(map);
+      
+      markersRef.current = window.L.layerGroup().addTo(map);
+      mapRef.current = map;
+    }
+  }, [isAuthorized]);
+
+  // Update Markers when selections change
+  useEffect(() => {
+    if (!mapRef.current || !markersRef.current) return;
+    const markers = markersRef.current;
+    markers.clearLayers();
+
+    const bounds = [];
+
+    // Selected Incident Marker
+    if (selectedRequest) {
+      const reqLat = parseFloat(selectedRequest.latitude);
+      const reqLon = parseFloat(selectedRequest.longitude);
+      if (!isNaN(reqLat) && !isNaN(reqLon)) {
+        window.L.circleMarker([reqLat, reqLon], {
+          radius: 10,
+          fillColor: '#ef4444',
+          color: '#ffffff',
+          weight: 2,
+          opacity: 1,
+          fillOpacity: 0.8
+        }).addTo(markers).bindPopup(`
+          <strong>Incident: ${selectedRequest.emergency_type}</strong><br/>
+          Location: ${selectedRequest.pickup_location}<br/>
+          Priority: ${selectedRequest.priority}
+        `);
+        bounds.push([reqLat, reqLon]);
+      }
+    }
+
+    // Nearby / Recommended Ambulances Markers
+    nearbyAmbulances.forEach(amb => {
+      const lat = amb.current_latitude !== null ? parseFloat(amb.current_latitude) : (amb.station ? parseFloat(amb.station.latitude) : null);
+      const lon = amb.current_longitude !== null ? parseFloat(amb.current_longitude) : (amb.station ? parseFloat(amb.station.longitude) : null);
+
+      if (lat !== null && lon !== null && !isNaN(lat) && !isNaN(lon)) {
+        const isSelected = selectedAmbulance?.id === amb.id;
+        window.L.circleMarker([lat, lon], {
+          radius: 8,
+          fillColor: isSelected ? '#6366f1' : '#3b82f6',
+          color: '#ffffff',
+          weight: 2,
+          opacity: 1,
+          fillOpacity: 0.8
+        }).addTo(markers).bindPopup(`
+          <strong>Ambulance: ${amb.ambulance_number}</strong><br/>
+          Status: ${amb.status} [${amb.lifecycle_status}]<br/>
+          Type: ${amb.type}<br/>
+          Distance: ${amb.distance !== null ? `${amb.distance} km` : 'N/A'}
+        `);
+        bounds.push([lat, lon]);
+      }
+    });
+
+    // Active Missions Markers
+    missions.forEach(mission => {
+      const amb = mission.ambulance;
+      if (!amb) return;
+      const lat = amb.current_latitude !== null ? parseFloat(amb.current_latitude) : (amb.station ? parseFloat(amb.station.latitude) : null);
+      const lon = amb.current_longitude !== null ? parseFloat(amb.current_longitude) : (amb.station ? parseFloat(amb.station.longitude) : null);
+
+      if (lat !== null && lon !== null && !isNaN(lat) && !isNaN(lon)) {
+        const isTracked = activeTrackedMission?.id === mission.id;
+        window.L.circleMarker([lat, lon], {
+          radius: 8,
+          fillColor: isTracked ? '#10b981' : '#64748b',
+          color: '#ffffff',
+          weight: 2,
+          opacity: 1,
+          fillOpacity: 0.8
+        }).addTo(markers).bindPopup(`
+          <strong>Mission Ambulance: ${amb.ambulance_number}</strong><br/>
+          Status: ${mission.status}<br/>
+          Driver: ${mission.driver?.name || 'N/A'}
+        `);
+        bounds.push([lat, lon]);
+      }
+    });
+
+    if (bounds.length > 0 && !hasFittedBoundsRef.current) {
+      mapRef.current.fitBounds(bounds, { padding: [40, 40] });
+      hasFittedBoundsRef.current = true;
+    }
+  }, [selectedRequest, nearbyAmbulances, selectedAmbulance, missions, activeTrackedMission]);
+
+  // Handle Tracked Route
+  useEffect(() => {
+    if (!mapRef.current) return;
+    
+    if (routeRef.current) {
+      mapRef.current.removeLayer(routeRef.current);
+      routeRef.current = null;
+    }
+
+    if (!activeTrackedMission) {
+      setTrackedMissionRoute(null);
+      return;
+    }
+
+    const fetchRoute = async () => {
+      try {
+        const response = await api.get(`/missions/${activeTrackedMission.id}/route/`);
+        const routeData = response.data;
+        setTrackedMissionRoute(routeData);
+
+        if (routeData.route && routeData.route.length > 0) {
+          const polyline = window.L.polyline(routeData.route, {
+            color: '#10b981',
+            weight: 4,
+            opacity: 0.8,
+            dashArray: '5, 10'
+          }).addTo(mapRef.current);
+          routeRef.current = polyline;
+          
+          if (!hasFittedRouteRef.current) {
+            mapRef.current.fitBounds(polyline.getBounds(), { padding: [50, 50] });
+            hasFittedRouteRef.current = true;
+          }
+        }
+      } catch (err) {
+        console.error("Error fetching mission route:", err);
+      }
+    };
+
+    fetchRoute();
+    const interval = setInterval(fetchRoute, 8000);
+    return () => clearInterval(interval);
+  }, [activeTrackedMission]);
 
   if (!isAuthorized) {
     return (
@@ -576,6 +739,26 @@ const DispatchConsole = () => {
                 </form>
               </div>
             )}
+            {/* Live Operations Map */}
+            <div className="map-panel-box" style={{ marginTop: '20px', display: 'flex', flexDirection: 'column', gap: '10px', borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '20px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <h4 style={{ fontSize: '0.88rem', textTransform: 'uppercase', letterSpacing: '0.06em', color: '#64748b', margin: 0 }}>
+                  Live Operations Map
+                </h4>
+                {activeTrackedMission && (
+                  <div style={{ fontSize: '0.8rem', color: '#10b981', fontWeight: 600 }}>
+                    Tracking: {activeTrackedMission.ambulance?.ambulance_number} ({trackedMissionRoute ? `${trackedMissionRoute.distance_km} km, ${trackedMissionRoute.eta_minutes} mins ETA` : 'loading...'})
+                    <button 
+                      style={{ marginLeft: '10px', background: 'transparent', border: 'none', color: '#ef4444', cursor: 'pointer', fontWeight: 'bold' }}
+                      onClick={() => setActiveTrackedMission(null)}
+                    >
+                      ✕ Stop Tracking
+                    </button>
+                  </div>
+                )}
+              </div>
+              <div id="dispatch-map" style={{ height: '320px', borderRadius: '12px', background: '#090d16', border: '1px solid rgba(255,255,255,0.06)', zIndex: 1 }}></div>
+            </div>
           </div>
         </section>
 
@@ -600,6 +783,26 @@ const DispatchConsole = () => {
                         <div>
                           <h4 className="mission-title">Mission: {mission.ambulance?.ambulance_number}</h4>
                           <span className="mission-driver-lbl">Driver: {mission.driver?.name}</span>
+                          <button 
+                            className="track-map-btn"
+                            style={{
+                              marginTop: '6px',
+                              background: activeTrackedMission?.id === mission.id ? '#10b981' : 'rgba(255,255,255,0.06)',
+                              border: '1px solid rgba(255,255,255,0.1)',
+                              borderRadius: '6px',
+                              color: '#ffffff',
+                              fontSize: '0.72rem',
+                              padding: '4px 8px',
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                              width: 'fit-content'
+                            }}
+                            onClick={() => setActiveTrackedMission(activeTrackedMission?.id === mission.id ? null : mission)}
+                          >
+                            📍 {activeTrackedMission?.id === mission.id ? 'Tracking Live' : 'Track on Map'}
+                          </button>
                         </div>
                         <span className={`status-pill status-${mission.status.toLowerCase()}`}>
                           {mission.status}

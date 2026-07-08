@@ -62,6 +62,8 @@ class Ambulance(models.Model):
     status = models.CharField(max_length=50, choices=STATUS_CHOICES, default='ACTIVE')
     lifecycle_status = models.CharField(max_length=50, choices=LIFECYCLE_STATUS_CHOICES, default='AVAILABLE')
     equipment = models.ManyToManyField(Equipment, blank=True, related_name='ambulances')
+    current_latitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    current_longitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
 
     def __str__(self):
         return f"{self.ambulance_number} ({self.status}) [{self.lifecycle_status}]"
@@ -456,6 +458,18 @@ class Trip(models.Model):
 
     def __str__(self):
         return f"Trip {self.id} - Amb: {self.ambulance.ambulance_number} ({self.status})"
+
+
+class GPSLog(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    ambulance = models.ForeignKey(Ambulance, on_delete=models.CASCADE, related_name='gps_logs')
+    trip = models.ForeignKey(Trip, on_delete=models.SET_NULL, null=True, blank=True, related_name='gps_logs')
+    latitude = models.DecimalField(max_digits=9, decimal_places=6)
+    longitude = models.DecimalField(max_digits=9, decimal_places=6)
+    recorded_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.ambulance.ambulance_number} @ {self.recorded_at} ({self.latitude}, {self.longitude})"
 
 
 

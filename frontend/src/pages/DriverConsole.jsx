@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import api from '../services/api';
 import './DriverConsole.css';
 
@@ -86,6 +86,176 @@ const DriverConsole = () => {
     }
   };
 
+  const activeMission = ambulance?.active_mission;
+
+  // Map and Tracking References
+  const driverMapRef = useRef(null);
+  const driverMarkersRef = useRef(null);
+  const driverRouteRef = useRef(null);
+  const [simulating, setSimulating] = useState(false);
+  const [useDeviceGPS, setUseDeviceGPS] = useState(false);
+  const [currentCoords, setCurrentCoords] = useState(null);
+  const [routeInfo, setRouteInfo] = useState(null);
+
+  // Initialize Map
+  useEffect(() => {
+    if (!window.L || !ambulance) return;
+    const mapContainer = document.getElementById('driver-map');
+    if (!mapContainer) return;
+
+    if (!driverMapRef.current) {
+      const defaultLat = ambulance.current_latitude ? parseFloat(ambulance.current_latitude) : (ambulance.station ? parseFloat(ambulance.station.latitude) : 21.820600);
+      const defaultLon = ambulance.current_longitude ? parseFloat(ambulance.current_longitude) : (ambulance.station ? parseFloat(ambulance.station.longitude) : 75.609400);
+
+      const map = window.L.map('driver-map').setView([defaultLat, defaultLon], 14);
+      window.L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '© OpenStreetMap contributors'
+      }).addTo(map);
+
+      driverMarkersRef.current = window.L.layerGroup().addTo(map);
+      driverMapRef.current = map;
+      setCurrentCoords({ latitude: defaultLat, longitude: defaultLon });
+    }
+  }, [ambulance]);
+
+  // Fetch Route when activeMission changes
+  useEffect(() => {
+    if (!ambulance || !activeMission || !driverMapRef.current) return;
+
+    const fetchRoute = async () => {
+      try {
+        const response = await api.get(`/missions/${activeMission.id}/route/`);
+        const data = response.data;
+        setRouteInfo(data);
+
+        if (driverRouteRef.current) {
+          driverMapRef.current.removeLayer(driverRouteRef.current);
+          driverRouteRef.current = null;
+        }
+
+        if (data.route && data.route.length > 0) {
+          const polyline = window.L.polyline(data.route, {
+            color: '#3b82f6',
+            weight: 5,
+            opacity: 0.8
+          }).addTo(driverMapRef.current);
+          driverRouteRef.current = polyline;
+          driverMapRef.current.fitBounds(polyline.getBounds(), { padding: [40, 40] });
+        }
+      } catch (err) {
+        console.error("Error fetching route in driver console:", err);
+      }
+    };
+
+    fetchRoute();
+  }, [ambulance, activeMission?.id, ambulance?.lifecycle_status]);
+
+  // GPS Simulation Loop
+  useEffect(() => {
+    if (!simulating || !routeInfo?.route || routeInfo.route.length === 0 || !ambulance) {
+      return;
+    }
+
+    let currentIndex = 0;
+    const routePoints = routeInfo.route;
+
+    const interval = setInterval(async () => {
+      if (currentIndex >= routePoints.length) {
+        setSimulating(false);
+        clearInterval(interval);
+        return;
+      }
+
+      const point = routePoints[currentIndex];
+      const nextLat = point[0];
+      const nextLon = point[1];
+
+      setCurrentCoords({ latitude: nextLat, longitude: nextLon });
+
+      try {
+        await api.post(`/ambulances/${ambulance.id}/update-location/`, {
+          latitude: nextLat,
+          longitude: nextLon
+        });
+      } catch (err) {
+        console.error("Error updating simulated location:", err);
+      }
+
+      currentIndex++;
+    }, 4000);
+
+    return () => clearInterval(interval);
+  }, [simulating, routeInfo, ambulance]);
+
+  // Turn off simulator if device GPS is enabled
+  useEffect(() => {
+    if (useDeviceGPS) setSimulating(false);
+  }, [useDeviceGPS]);
+
+  // Turn off device GPS if simulator is enabled
+  useEffect(() => {
+    if (simulating) setUseDeviceGPS(false);
+  }, [simulating]);
+
+  // HTML5 Device Geolocation API Tracking
+  useEffect(() => {
+    if (!useDeviceGPS || !navigator.geolocation || !ambulance) return;
+
+    const watchId = navigator.geolocation.watchPosition(
+      async (position) => {
+        const { latitude, longitude } = position.coords;
+        setCurrentCoords({ latitude, longitude });
+
+        try {
+          await api.post(`/ambulances/${ambulance.id}/update-location/`, {
+            latitude,
+            longitude
+          });
+        } catch (err) {
+          console.error("Error updating location from device GPS:", err);
+        }
+      },
+      (err) => {
+        console.error("Error watching device position:", err);
+        alert("Unable to retrieve GPS coordinates from device: " + err.message);
+        setUseDeviceGPS(false);
+      },
+      { enableHighAccuracy: true, maximumAge: 10000, timeout: 5000 }
+    );
+
+    return () => navigator.geolocation.clearWatch(watchId);
+  }, [useDeviceGPS, ambulance]);
+
+  // Update Markers
+  useEffect(() => {
+    if (!driverMapRef.current || !driverMarkersRef.current) return;
+    const markers = driverMarkersRef.current;
+    markers.clearLayers();
+
+    if (currentCoords) {
+      window.L.circleMarker([currentCoords.latitude, currentCoords.longitude], {
+        radius: 9,
+        fillColor: '#3b82f6',
+        color: '#ffffff',
+        weight: 2,
+        opacity: 1,
+        fillOpacity: 0.9
+      }).addTo(markers).bindPopup("Your Location");
+    }
+
+    if (routeInfo?.destination) {
+      const dest = routeInfo.destination;
+      window.L.circleMarker([dest.latitude, dest.longitude], {
+        radius: 9,
+        fillColor: '#ef4444',
+        color: '#ffffff',
+        weight: 2,
+        opacity: 1,
+        fillOpacity: 0.9
+      }).addTo(markers).bindPopup(`Destination: ${dest.name}`);
+    }
+  }, [currentCoords, routeInfo]);
+
   if (loading) {
     return (
       <div className="driver-console-loading">
@@ -111,7 +281,6 @@ const DriverConsole = () => {
   }
 
   const currentStatus = ambulance.lifecycle_status || 'AVAILABLE';
-  const activeMission = ambulance.active_mission;
 
   // Define valid next states based on transition engine
   const LIFECYCLE_TRANSITIONS = {
@@ -293,6 +462,42 @@ const DriverConsole = () => {
               <p>You are currently available on standby. A dispatcher will assign an emergency request to you when needed.</p>
             </section>
           )}
+
+          <section className="driver-card map-card" style={{ marginTop: '20px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap', gap: '8px' }}>
+              <h3>Live Navigation & GPS</h3>
+              <div style={{ display: 'flex', gap: '16px' }}>
+                <label className="checkbox-label" style={{ fontWeight: '700', color: '#10b981', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.82rem', cursor: 'pointer' }} title="Query your actual device's physical GPS sensor">
+                  <input
+                    type="checkbox"
+                    checked={useDeviceGPS}
+                    onChange={(e) => setUseDeviceGPS(e.target.checked)}
+                    style={{ accentColor: '#10b981' }}
+                  />
+                  Use Device GPS
+                </label>
+                {activeMission && (
+                  <label className="checkbox-label" style={{ fontWeight: '700', color: '#6366f1', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.82rem', cursor: 'pointer' }} title="Simulate movement along the route">
+                    <input
+                      type="checkbox"
+                      checked={simulating}
+                      onChange={(e) => setSimulating(e.target.checked)}
+                      style={{ accentColor: '#6366f1' }}
+                    />
+                    Simulate Route
+                  </label>
+                )}
+              </div>
+            </div>
+            {activeMission && routeInfo && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', marginBottom: '12px', fontSize: '0.82rem', color: '#cbd5e1' }}>
+                <span>Distance: <strong style={{ color: '#a5b4fc' }}>{routeInfo.distance_km} km</strong></span>
+                <span>ETA: <strong style={{ color: '#a5b4fc' }}>{routeInfo.eta_minutes} mins</strong></span>
+                <span>Destination: <strong>{routeInfo.destination?.name}</strong></span>
+              </div>
+            )}
+            <div id="driver-map" style={{ height: '280px', borderRadius: '12px', background: '#090d16', border: '1px solid rgba(255,255,255,0.06)', zIndex: 1 }}></div>
+          </section>
 
           <section className="driver-card transition-controls-card">
             <h3>Update Operational Status</h3>

@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Hospital, Station, Ambulance, Driver, DriverAssignment, AmbulanceOperationalHistory, AmbulanceLifecycleLog, Shift, Certification, EmergencyRequest, Mission, Equipment, Trip
+from .models import Hospital, Station, Ambulance, Driver, DriverAssignment, AmbulanceOperationalHistory, AmbulanceLifecycleLog, Shift, Certification, EmergencyRequest, Mission, Equipment, Trip, GPSLog
 from authentication.serializers import UserSerializer
 
 class HospitalSerializer(serializers.ModelSerializer):
@@ -162,6 +162,12 @@ class EquipmentSerializer(serializers.ModelSerializer):
         model = Equipment
         fields = ['id', 'name']
 
+class GPSLogSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = GPSLog
+        fields = ['id', 'ambulance', 'trip', 'latitude', 'longitude', 'recorded_at']
+        read_only_fields = ['id', 'recorded_at']
+
 class AmbulanceSerializer(serializers.ModelSerializer):
     hospital_id = serializers.PrimaryKeyRelatedField(
         queryset=Hospital.objects.all(), source='hospital', write_only=True
@@ -184,7 +190,7 @@ class AmbulanceSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'ambulance_number', 'hospital_id', 'hospital',
             'station_id', 'station', 'type', 'status', 'lifecycle_status', 'active_driver', 'active_mission',
-            'equipment'
+            'equipment', 'current_latitude', 'current_longitude'
         ]
 
     def get_active_driver(self, obj):

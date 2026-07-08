@@ -49,6 +49,7 @@ INSTALLED_APPS = [
     # Local apps
     'authentication',
     'ambulances',
+    'notifications',
 ]
 
 MIDDLEWARE = [
@@ -184,6 +185,30 @@ STATIC_URL = 'static/'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # GraphHopper API Configuration
-GRAPHHOPPER_API_KEY = os.environ.get('GRAPHHOPPER_API_KEY', '')
+GRAPHHOPPER_API_KEY = os.environ.get('GRAPHHOPPER_API_KEY', '66c3e375-edff-4668-bcda-d628b94e2fc1')
+
+# Email Configuration
+if os.environ.get('EMAIL_HOST_USER') and not os.environ.get('EMAIL_HOST_USER').startswith('YOUR_'):
+    EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+    EMAIL_HOST = 'smtp.gmail.com'
+    EMAIL_PORT = 587
+    EMAIL_USE_TLS = True
+    EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER')
+    EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD')
+    DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL', EMAIL_HOST_USER)
+else:
+    # Demo/Testing Bypass mode: Saves emails to file directory sent_emails/
+    EMAIL_BACKEND = 'django.core.mail.backends.filebased.EmailBackend'
+    EMAIL_FILE_PATH = os.path.join(BASE_DIR, 'sent_emails')
+    DEFAULT_FROM_EMAIL = 'noreply@lifeline-dispatch.org'
+
+# Twilio SMS Configuration
+TWILIO_ACCOUNT_SID = os.environ.get('TWILIO_ACCOUNT_SID', 'YOUR_TWILIO_ACCOUNT_SID')
+TWILIO_AUTH_TOKEN = os.environ.get('TWILIO_AUTH_TOKEN', 'YOUR_TWILIO_AUTH_TOKEN')
+TWILIO_FROM_NUMBER = os.environ.get('TWILIO_FROM_NUMBER', 'YOUR_TWILIO_PHONE_NUMBER')
+
+
+
+
 
 

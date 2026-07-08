@@ -1,7 +1,9 @@
 import axios from 'axios';
 
+const backendHost = typeof window !== 'undefined' ? window.location.hostname : 'localhost';
+
 const api = axios.create({
-  baseURL: 'http://localhost:8000/api',
+  baseURL: `http://${backendHost}:8000/api`,
   headers: {
     'Content-Type': 'application/json',
   },

@@ -14,13 +14,13 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 
-from .models import Hospital, Station, Ambulance, Driver, DriverAssignment, AmbulanceOperationalHistory, AmbulanceLifecycleLog, Shift, Certification, EmergencyRequest, Mission, Equipment, Trip
+from .models import Hospital, Station, Ambulance, Driver, DriverAssignment, AmbulanceOperationalHistory, AmbulanceLifecycleLog, Shift, Certification, EmergencyRequest, Mission, Equipment, Trip, GPSLog
 from .serializers import (
     HospitalSerializer, StationSerializer, DriverSerializer,
     AmbulanceSerializer, AmbulanceOperationalHistorySerializer, AmbulanceLifecycleLogSerializer,
     AssignDriverSerializer, TransferStationSerializer, ChangeStatusSerializer,
     ShiftSerializer, CertificationSerializer, EmergencyRequestSerializer,
-    MissionSerializer, EquipmentSerializer, TripSerializer
+    MissionSerializer, EquipmentSerializer, TripSerializer, GPSLogSerializer
 )
 
 class AmbulancePermission(permissions.BasePermission):
@@ -37,8 +37,8 @@ class AmbulancePermission(permissions.BasePermission):
         
         user_role = request.user.role.name if request.user.role else None
 
-        # Actions allowed for DRIVER: transition_lifecycle, lifecycle_history, my_assignment
-        if view.action in ['transition_lifecycle', 'lifecycle_history', 'my_assignment']:
+        # Actions allowed for DRIVER: transition_lifecycle, lifecycle_history, my_assignment, update_location
+        if view.action in ['transition_lifecycle', 'lifecycle_history', 'my_assignment', 'update_location']:
             return user_role in ['HOSPITAL_ADMINISTRATOR', 'FLEET_MANAGER', 'DISPATCHER', 'DRIVER']
 
         # Read actions (Safe methods + history action + assign_driver action)
@@ -363,14 +363,17 @@ class AmbulanceViewSet(viewsets.ModelViewSet):
 
         api_key = getattr(settings, 'GRAPHHOPPER_API_KEY', '')
 
-        def fetch_routing_info(station):
-            if not station:
+        def fetch_routing_info(coords):
+            if not coords:
+                return None, None
+            target_lat, target_lon = coords
+            if target_lat is None or target_lon is None:
                 return None, None
             if not api_key:
-                dist = get_haversine_distance(lat, lon, station.latitude, station.longitude)
+                dist = get_haversine_distance(lat, lon, target_lat, target_lon)
                 return dist, get_haversine_eta(dist)
             try:
-                url = f"https://graphhopper.com/api/1/route?point={lat},{lon}&point={station.latitude},{station.longitude}&profile=car&locale=en&key={api_key}"
+                url = f"https://graphhopper.com/api/1/route?point={lat},{lon}&point={target_lat},{target_lon}&profile=car&locale=en&key={api_key}"
                 req = urllib.request.Request(
                     url, 
                     headers={'User-Agent': 'Lifeline-Dispatch/1.0'}
@@ -386,13 +389,20 @@ class AmbulanceViewSet(viewsets.ModelViewSet):
                         return dist_km, eta_mins
             except Exception:
                 pass
-            dist = get_haversine_distance(lat, lon, station.latitude, station.longitude)
+            dist = get_haversine_distance(lat, lon, target_lat, target_lon)
             return dist, get_haversine_eta(dist)
 
-        stations = [amb.station for amb in ambulances_queryset]
+        coords_list = []
+        for amb in ambulances_queryset:
+            if amb.current_latitude is not None and amb.current_longitude is not None:
+                coords_list.append((amb.current_latitude, amb.current_longitude))
+            elif amb.station:
+                coords_list.append((amb.station.latitude, amb.station.longitude))
+            else:
+                coords_list.append(None)
         
         with ThreadPoolExecutor(max_workers=10) as executor:
-            routing_results = list(executor.map(fetch_routing_info, stations))
+            routing_results = list(executor.map(fetch_routing_info, coords_list))
             
         return routing_results
 
@@ -776,6 +786,77 @@ class AmbulanceViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(assignment.ambulance)
         return Response(serializer.data)
 
+    @action(detail=True, methods=['POST'], url_path='update-location')
+    def update_location(self, request, pk=None):
+        ambulance = self.get_object()
+        
+        active_assignment = ambulance.assignments.filter(end_time__isnull=True).first()
+        is_assigned_driver = active_assignment and active_assignment.driver and active_assignment.driver.user == request.user
+        user_role = request.user.role.name if request.user.role else None
+        
+        if user_role not in ['HOSPITAL_ADMINISTRATOR', 'DISPATCHER'] and not is_assigned_driver:
+            return Response(
+                {"detail": "You do not have permission to update this ambulance's location."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+            
+        latitude = request.data.get('latitude')
+        longitude = request.data.get('longitude')
+        
+        if latitude is None or longitude is None:
+            return Response(
+                {"detail": "latitude and longitude are required fields."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+            
+        try:
+            lat = float(latitude)
+            lon = float(longitude)
+        except ValueError:
+            return Response(
+                {"detail": "latitude and longitude must be valid numbers."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+            
+        if lat < -90 or lat > 90:
+            return Response(
+                {"detail": "Latitude must be between -90 and 90."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+            
+        if lon < -180 or lon > 180:
+            return Response(
+                {"detail": "Longitude must be between -180 and 180."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+            
+        from django.db import transaction
+        from .models import GPSLog
+        
+        active_mission = ambulance.missions.exclude(status__in=['COMPLETED', 'CANCELLED']).first()
+        active_trip = None
+        if active_mission:
+            active_trip = getattr(active_mission, 'trip', None)
+            
+        with transaction.atomic():
+            ambulance.current_latitude = lat
+            ambulance.current_longitude = lon
+            ambulance.save()
+            
+            GPSLog.objects.create(
+                ambulance=ambulance,
+                trip=active_trip,
+                latitude=lat,
+                longitude=lon
+            )
+            
+        return Response({
+            "detail": "Location updated successfully.",
+            "current_latitude": float(ambulance.current_latitude),
+            "current_longitude": float(ambulance.current_longitude),
+            "trip_id": str(active_trip.id) if active_trip else None
+        }, status=status.HTTP_200_OK)
+
 
 class HospitalViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = Hospital.objects.all().order_by('hospital_name')
@@ -1114,6 +1195,107 @@ class MissionViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         serializer.save()
 
+    @action(detail=True, methods=['GET'], url_path='route')
+    def route(self, request, pk=None):
+        mission = self.get_object()
+        ambulance = mission.ambulance
+        emergency_request = mission.emergency_request
+        
+        start_lat = ambulance.current_latitude
+        start_lon = ambulance.current_longitude
+        
+        if start_lat is None or start_lon is None:
+            if ambulance.station:
+                start_lat = ambulance.station.latitude
+                start_lon = ambulance.station.longitude
+                
+        if start_lat is None or start_lon is None:
+            return Response(
+                {"detail": "Ambulance does not have a current location or station."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+            
+        dest_name = "Incident Scene"
+        dest_lat = None
+        dest_lon = None
+        
+        if mission.status in ['ASSIGNED', 'EN_ROUTE', 'AT_INCIDENT']:
+            dest_lat = emergency_request.latitude
+            dest_lon = emergency_request.longitude
+            dest_name = f"Incident Scene ({emergency_request.pickup_location})"
+        else:
+            dest_hospital = ambulance.hospital
+            if dest_hospital:
+                first_station = dest_hospital.stations.first()
+                if first_station:
+                    dest_lat = first_station.latitude
+                    dest_lon = first_station.longitude
+                    dest_name = f"Hospital Station ({first_station.station_name})"
+                    
+            if dest_lat is None or dest_lon is None:
+                dest_lat = emergency_request.latitude
+                dest_lon = emergency_request.longitude
+                dest_name = f"Incident Scene ({emergency_request.pickup_location})"
+                
+        api_key = getattr(settings, 'GRAPHHOPPER_API_KEY', '')
+        route_coords = []
+        distance_km = 0.0
+        eta_mins = 0
+        
+        fallback = True
+        if api_key:
+            try:
+                url = f"https://graphhopper.com/api/1/route?point={start_lat},{start_lon}&point={dest_lat},{dest_lon}&profile=car&locale=en&points_encoded=false&key={api_key}"
+                req = urllib.request.Request(
+                    url, 
+                    headers={'User-Agent': 'Lifeline-Dispatch/1.0'}
+                )
+                with urllib.request.urlopen(req, timeout=5) as response:
+                    data = json.loads(response.read().decode())
+                    if 'paths' in data and len(data['paths']) > 0:
+                        path = data['paths'][0]
+                        dist_m = path.get('distance', 0)
+                        time_ms = path.get('time', 0)
+                        distance_km = dist_m / 1000.0
+                        eta_mins = round(time_ms / 60000.0)
+                        
+                        gh_coords = path.get('points', {}).get('coordinates', [])
+                        route_coords = [[coord[1], coord[0]] for coord in gh_coords]
+                        fallback = False
+            except Exception:
+                pass
+                
+        if fallback:
+            def haversine(lat1, lon1, lat2, lon2):
+                R = 6371.0
+                lat1_r = math.radians(float(lat1))
+                lon1_r = math.radians(float(lon1))
+                lat2_r = math.radians(float(lat2))
+                lon2_r = math.radians(float(lon2))
+                dlat = lat2_r - lat1_r
+                dlon = lon2_r - lon1_r
+                a = math.sin(dlat / 2)**2 + math.cos(lat1_r) * math.cos(lat2_r) * math.sin(dlon / 2)**2
+                c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+                return R * c
+            
+            distance_km = haversine(start_lat, start_lon, dest_lat, dest_lon)
+            eta_mins = round((distance_km / 40.0) * 60.0)
+            route_coords = [
+                [float(start_lat), float(start_lon)],
+                [float(dest_lat), float(dest_lon)]
+            ]
+            
+        return Response({
+            "route": route_coords,
+            "distance_km": round(distance_km, 2),
+            "eta_minutes": int(eta_mins),
+            "destination": {
+                "name": dest_name,
+                "latitude": float(dest_lat),
+                "longitude": float(dest_lon)
+            }
+        }, status=status.HTTP_200_OK)
+
 
 class EquipmentViewSet(viewsets.ModelViewSet):
     queryset = Equipment.objects.all().order_by('name')
@@ -1130,9 +1312,9 @@ class TripPermission(permissions.BasePermission):
             
         user_role = request.user.role.name if request.user.role else None
         
-        # Drivers can only access retrieve detail view or 'my-trips' action
+        # Drivers can only access retrieve detail view, 'my-trips', or 'route_history' action
         if user_role == 'DRIVER':
-            if view.action in ['retrieve', 'my_trips']:
+            if view.action in ['retrieve', 'my_trips', 'route_history']:
                 return True
             return False
             
@@ -1167,7 +1349,7 @@ class TripViewSet(viewsets.ReadOnlyModelViewSet):
             if user_role in ['HOSPITAL_ADMINISTRATOR', 'FLEET_MANAGER', 'DISPATCHER']:
                 queryset = Trip.objects.all().order_by('-created_at')
             elif user_role == 'DRIVER':
-                if self.action == 'retrieve':
+                if self.action in ['retrieve', 'route_history']:
                     queryset = Trip.objects.all().order_by('-created_at')
                 else:
                     queryset = Trip.objects.filter(driver__user=user).order_by('-created_at')
@@ -1217,6 +1399,13 @@ class TripViewSet(viewsets.ReadOnlyModelViewSet):
 
         serializer = self.get_serializer(trips, many=True)
         return Response(serializer.data)
+
+    @action(detail=True, methods=['GET'], url_path='route-history')
+    def route_history(self, request, pk=None):
+        trip = self.get_object()
+        logs = trip.gps_logs.all().order_by('recorded_at')
+        serializer = GPSLogSerializer(logs, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
 
 

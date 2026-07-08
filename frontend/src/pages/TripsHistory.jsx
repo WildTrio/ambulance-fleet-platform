@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import api from '../services/api';
 import './TripsHistory.css';
 
@@ -86,6 +86,90 @@ const TripsHistory = () => {
     const diffMins = Math.max(0, Math.round(diffMs / 60000));
     return `${diffMins} mins`;
   };
+
+  const historyMapRef = useRef(null);
+  const historyMarkersRef = useRef(null);
+  const historyPolylineRef = useRef(null);
+
+  useEffect(() => {
+    if (!selectedTrip || !window.L) return;
+
+    const timer = setTimeout(async () => {
+      const mapContainer = document.getElementById('history-map');
+      if (!mapContainer) return;
+
+      if (!historyMapRef.current) {
+        const map = window.L.map('history-map').setView([21.820600, 75.609400], 12);
+        window.L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          attribution: '© OpenStreetMap contributors'
+        }).addTo(map);
+        historyMarkersRef.current = window.L.layerGroup().addTo(map);
+        historyMapRef.current = map;
+      }
+
+      const map = historyMapRef.current;
+      const markers = historyMarkersRef.current;
+      markers.clearLayers();
+
+      if (historyPolylineRef.current) {
+        map.removeLayer(historyPolylineRef.current);
+        historyPolylineRef.current = null;
+      }
+
+      try {
+        const response = await api.get(`/trips/${selectedTrip.id}/route-history/`);
+        const logs = response.data;
+
+        if (logs && logs.length > 0) {
+          const latLons = logs.map(l => [parseFloat(l.latitude), parseFloat(l.longitude)]);
+
+          // Start marker
+          window.L.circleMarker(latLons[0], {
+            radius: 8,
+            fillColor: '#10b981',
+            color: '#ffffff',
+            weight: 2,
+            opacity: 1,
+            fillOpacity: 0.9
+          }).addTo(markers).bindPopup("Trip Start");
+
+          // End marker
+          if (latLons.length > 1) {
+            window.L.circleMarker(latLons[latLons.length - 1], {
+              radius: 8,
+              fillColor: '#ef4444',
+              color: '#ffffff',
+              weight: 2,
+              opacity: 1,
+              fillOpacity: 0.9
+            }).addTo(markers).bindPopup(selectedTrip.status === 'COMPLETED' ? "Destination Arrived" : "Trip Aborted");
+          }
+
+          // Polyline path
+          const polyline = window.L.polyline(latLons, {
+            color: '#818cf8',
+            weight: 5,
+            opacity: 0.8
+          }).addTo(map);
+          historyPolylineRef.current = polyline;
+
+          map.fitBounds(polyline.getBounds(), { padding: [30, 30] });
+        }
+      } catch (err) {
+        console.error("Error loading route history:", err);
+      }
+    }, 200);
+
+    return () => {
+      clearTimeout(timer);
+      if (historyMapRef.current) {
+        historyMapRef.current.remove();
+        historyMapRef.current = null;
+        historyMarkersRef.current = null;
+        historyPolylineRef.current = null;
+      }
+    };
+  }, [selectedTrip]);
 
   const handlePrintReport = () => {
     window.print();
@@ -293,6 +377,11 @@ const TripsHistory = () => {
                       <span>{selectedTrip.end_time ? new Date(selectedTrip.end_time).toLocaleTimeString() : 'N/A'}</span>
                     </div>
                   </div>
+                </section>
+
+                <section className="report-section card-style full-width no-print">
+                  <h4>🗺️ Traveled Route History</h4>
+                  <div id="history-map" style={{ height: '280px', borderRadius: '12px', background: '#090d16', border: '1px solid rgba(255,255,255,0.06)', zIndex: 1, marginTop: '10px' }}></div>
                 </section>
 
                 <section className="report-section card-style full-width">
