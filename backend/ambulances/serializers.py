@@ -2,6 +2,22 @@ from rest_framework import serializers
 from .models import Hospital, Station, Ambulance, Driver, DriverAssignment, AmbulanceOperationalHistory, AmbulanceLifecycleLog, Shift, Certification, EmergencyRequest, Mission, Equipment, Trip, GPSLog
 from authentication.serializers import UserSerializer
 
+def get_user_hospital(user):
+    """Return the user's hospital, falling back to the first hospital in the DB.
+    When using the fallback, batch-assigns all users without a hospital so
+    that subsequent queryset filters (user__hospital=hospital) match correctly."""
+    if not user or not user.is_authenticated:
+        return None
+    if user.hospital:
+        return user.hospital
+    first_hospital = Hospital.objects.first()
+    if first_hospital:
+        from django.contrib.auth import get_user_model
+        User = get_user_model()
+        User.objects.filter(hospital__isnull=True).update(hospital=first_hospital)
+        user.hospital = first_hospital
+    return user.hospital
+
 class HospitalSerializer(serializers.ModelSerializer):
     class Meta:
         model = Hospital
@@ -41,12 +57,21 @@ class DriverSerializer(serializers.ModelSerializer):
         return value
 
     def validate_contact(self, value):
-        queryset = Driver.objects.filter(contact__iexact=value)
+        if not value:
+            raise serializers.ValidationError("Contact number is required.")
+        import re
+        if not re.match(r'^[\d\s\-\(\)\+]+$', value):
+            raise serializers.ValidationError("Contact number contains invalid characters.")
+        cleaned = re.sub(r'\D', '', value)
+        if len(cleaned) != 10:
+            raise serializers.ValidationError("Contact number must contain exactly 10 digits.")
+            
+        queryset = Driver.objects.filter(contact__iexact=cleaned)
         if self.instance:
             queryset = queryset.exclude(pk=self.instance.pk)
         if queryset.exists():
             raise serializers.ValidationError("A driver with this contact number already exists.")
-        return value
+        return cleaned
 
     def validate(self, data):
         if self.instance and data.get('availability', self.instance.availability):
@@ -68,6 +93,9 @@ class DriverSerializer(serializers.ModelSerializer):
         if not password:
             password = 'Password123'
             
+        request = self.context.get('request')
+        hospital = get_user_hospital(request.user) if (request and request.user) else None
+            
         with transaction.atomic():
             try:
                 driver_role = Role.objects.get(name='DRIVER')
@@ -78,7 +106,8 @@ class DriverSerializer(serializers.ModelSerializer):
                 email=user_data.get('email'),
                 name=user_data.get('name'),
                 password=password,
-                role=driver_role
+                role=driver_role,
+                hospital=hospital
             )
             driver = Driver.objects.create(user=user, **validated_data)
         return driver
@@ -127,6 +156,17 @@ class ShiftSerializer(serializers.ModelSerializer):
         model = Shift
         fields = ['id', 'driver', 'start_time', 'end_time']
         
+    def validate_driver(self, value):
+        request = self.context.get('request')
+        if request and request.user:
+            if request.user.is_superuser and not request.user.hospital:
+                return value
+            user_hospital = get_user_hospital(request.user)
+            driver_hospital = get_user_hospital(value.user)
+            if user_hospital and driver_hospital and driver_hospital != user_hospital:
+                raise serializers.ValidationError("Driver does not belong to your hospital.")
+        return value
+
     def validate(self, data):
         if data['start_time'] >= data['end_time']:
             raise serializers.ValidationError("End time must be after start time.")
@@ -137,6 +177,17 @@ class CertificationSerializer(serializers.ModelSerializer):
         model = Certification
         fields = ['id', 'driver', 'name', 'certificate_number', 'issuing_authority', 'issue_date', 'expiry_date']
         
+    def validate_driver(self, value):
+        request = self.context.get('request')
+        if request and request.user:
+            if request.user.is_superuser and not request.user.hospital:
+                return value
+            user_hospital = get_user_hospital(request.user)
+            driver_hospital = get_user_hospital(value.user)
+            if user_hospital and driver_hospital and driver_hospital != user_hospital:
+                raise serializers.ValidationError("Driver does not belong to your hospital.")
+        return value
+
     def validate(self, data):
         if data['issue_date'] >= data['expiry_date']:
             raise serializers.ValidationError("Expiry date must be after issue date.")
@@ -265,10 +316,32 @@ class AssignDriverSerializer(serializers.Serializer):
             driver = Driver.objects.get(id=value)
         except Driver.DoesNotExist:
             raise serializers.ValidationError("Driver with this ID does not exist.")
+            
+        request = self.context.get('request')
+        if request and request.user:
+            if request.user.is_superuser and not request.user.hospital:
+                return driver
+            user_hospital = get_user_hospital(request.user)
+            driver_hospital = get_user_hospital(driver.user)
+            if user_hospital and driver_hospital and driver_hospital != user_hospital:
+                raise serializers.ValidationError("Driver does not belong to your hospital.")
         return driver
 
 class TransferStationSerializer(serializers.Serializer):
-    station_id = serializers.PrimaryKeyRelatedField(queryset=Station.objects.all())
+    station_id = serializers.PrimaryKeyRelatedField(queryset=Station.objects.none())
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        request = self.context.get('request')
+        if request and request.user:
+            if request.user.is_superuser and not request.user.hospital:
+                self.fields['station_id'].queryset = Station.objects.all()
+            else:
+                user_hospital = get_user_hospital(request.user)
+                if user_hospital:
+                    self.fields['station_id'].queryset = Station.objects.filter(hospital=user_hospital)
+                else:
+                    self.fields['station_id'].queryset = Station.objects.none()
 
 class ChangeStatusSerializer(serializers.Serializer):
     status = serializers.ChoiceField(choices=Ambulance.STATUS_CHOICES)
@@ -344,9 +417,17 @@ class MissionSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError({"ambulance_id": "This field is required."})
 
             # Validate emergency request
+            request = self.context.get('request')
+            request_user = request.user if request else None
+            bypass_isolation = request_user and request_user.is_superuser and not request_user.hospital
+            user_hospital = get_user_hospital(request_user) if request_user else None
+
             req_id = data.get('emergency_request_id')
             try:
-                req = EmergencyRequest.objects.get(id=req_id)
+                if not bypass_isolation and user_hospital:
+                    req = EmergencyRequest.objects.get(id=req_id, hospital=user_hospital)
+                else:
+                    req = EmergencyRequest.objects.get(id=req_id)
             except EmergencyRequest.DoesNotExist:
                 raise serializers.ValidationError({"emergency_request_id": "Emergency request not found."})
             
@@ -356,7 +437,10 @@ class MissionSerializer(serializers.ModelSerializer):
             # Validate ambulance
             amb_id = data.get('ambulance_id')
             try:
-                amb = Ambulance.objects.get(id=amb_id)
+                if not bypass_isolation and user_hospital:
+                    amb = Ambulance.objects.get(id=amb_id, hospital=user_hospital)
+                else:
+                    amb = Ambulance.objects.get(id=amb_id)
             except Ambulance.DoesNotExist:
                 raise serializers.ValidationError({"ambulance_id": "Ambulance not found."})
                 
@@ -374,7 +458,10 @@ class MissionSerializer(serializers.ModelSerializer):
             if driver_id:
                 # We are assigning a driver to this ambulance on the fly
                 try:
-                    drv = Driver.objects.get(id=driver_id)
+                    if not bypass_isolation and user_hospital:
+                        drv = Driver.objects.get(id=driver_id, user__hospital=user_hospital)
+                    else:
+                        drv = Driver.objects.get(id=driver_id)
                 except Driver.DoesNotExist:
                     raise serializers.ValidationError({"driver_id": "Driver not found."})
                     

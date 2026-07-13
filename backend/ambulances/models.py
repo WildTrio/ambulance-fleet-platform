@@ -113,10 +113,21 @@ class Ambulance(models.Model):
         )
         return self
 
+from django.core.validators import RegexValidator
+
 class Driver(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='driver_profile')
-    contact = models.CharField(max_length=20, unique=True)
+    contact = models.CharField(
+        max_length=20,
+        unique=True,
+        validators=[
+            RegexValidator(
+                regex=r'^\d{10}$',
+                message="Contact number must be exactly 10 digits."
+            )
+        ]
+    )
     license_number = models.CharField(max_length=50, unique=True)
     availability = models.BooleanField(default=True)
 
@@ -214,6 +225,13 @@ class EmergencyRequest(models.Model):
     latitude = models.DecimalField(max_digits=9, decimal_places=6)
     longitude = models.DecimalField(max_digits=9, decimal_places=6)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='PENDING')
+    hospital = models.ForeignKey(
+        Hospital,
+        on_delete=models.PROTECT,
+        related_name='emergency_requests',
+        null=True,
+        blank=True
+    )
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
@@ -226,6 +244,19 @@ class EmergencyRequest(models.Model):
 
     def __str__(self):
         return f"{self.requester_name} - {self.emergency_type} ({self.status})"
+
+    def save(self, *args, **kwargs):
+        if not self.hospital:
+            if self.created_by and self.created_by.hospital:
+                self.hospital = self.created_by.hospital
+            else:
+                try:
+                    first_hospital = Hospital.objects.first()
+                    if first_hospital:
+                        self.hospital = first_hospital
+                except Exception:
+                    pass
+        super().save(*args, **kwargs)
 
 
 class Mission(models.Model):

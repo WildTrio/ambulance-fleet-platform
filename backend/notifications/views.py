@@ -35,15 +35,20 @@ class NotificationViewSet(viewsets.ModelViewSet):
 
     def trigger_escalation_checks(self):
         from ambulances.models import EmergencyRequest
+        from ambulances.views import get_user_hospital
         from django.utils import timezone
         from datetime import timedelta
         
-        # Find critical requests pending for over 3 minutes
+        # Find critical requests pending for over 3 minutes, scoped to user's hospital
         threshold_time = timezone.now() - timedelta(minutes=3)
-        pending_requests = EmergencyRequest.objects.filter(
+        hospital = get_user_hospital(self.request.user)
+        qs = EmergencyRequest.objects.filter(
             status='PENDING',
             created_at__lte=threshold_time
         )
+        if hospital:
+            qs = qs.filter(hospital=hospital)
+        pending_requests = qs
 
         for req in pending_requests:
             esc_msg = f"Request #{req.id} ({req.emergency_type}) at {req.pickup_location} has been pending for over 3 minutes without assignment!"

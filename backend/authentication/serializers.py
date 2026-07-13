@@ -17,6 +17,7 @@ class UserSerializer(serializers.ModelSerializer):
         required=False,
         allow_null=True
     )
+    hospital = serializers.SerializerMethodField()
 
     class Meta:
         model = User
@@ -26,9 +27,18 @@ class UserSerializer(serializers.ModelSerializer):
             'email',
             'role',
             'role_id',
+            'hospital',
             'created_at'
         ]
-        read_only_fields = ['id', 'created_at']
+        read_only_fields = ['id', 'created_at', 'hospital']
+
+    def get_hospital(self, obj):
+        if obj.hospital:
+            return {
+                'id': str(obj.hospital.id),
+                'hospital_name': obj.hospital.hospital_name
+            }
+        return None
 
 class LoginSerializer(serializers.Serializer):
     email = serializers.EmailField(required=True)

@@ -30,84 +30,7 @@ class Command(BaseCommand):
             else:
                 self.stdout.write(f"Role already exists: {role.name}")
 
-        self.stdout.write('Seeding mock users...')
-
-        users_data = [
-            {
-                'email': 'admin@hospital.org',
-                'name': 'Admin User',
-                'role': roles['HOSPITAL_ADMINISTRATOR'],
-                'is_staff': True,
-            },
-            {
-                'email': 'dispatcher@hospital.org',
-                'name': 'Jane Dispatcher',
-                'role': roles['DISPATCHER'],
-                'is_staff': False,
-            },
-            {
-                'email': 'fleet@hospital.org',
-                'name': 'Bob Fleet',
-                'role': roles['FLEET_MANAGER'],
-                'is_staff': False,
-            },
-            {
-                'email': 'driver@hospital.org',
-                'name': 'David Driver',
-                'role': roles['DRIVER'],
-                'is_staff': False,
-            },
-            {
-                'email': 'driver2@hospital.org',
-                'name': 'Bob Driver',
-                'role': roles['DRIVER'],
-                'is_staff': False,
-            },
-            {
-                'email': 'driver3@hospital.org',
-                'name': 'Rahul Driver',
-                'role': roles['DRIVER'],
-                'is_staff': False,
-            },
-            {
-                'email': 'citizen@gmail.com',
-                'name': 'John Requestor',
-                'role': roles['EMERGENCY_REQUESTOR'],
-                'is_staff': False,
-            },
-        ]
-
-        default_password = 'Password123'
-
-        for user_info in users_data:
-            user, created = User.objects.get_or_create(
-                email=user_info['email'],
-                defaults={
-                    'name': user_info['name'],
-                    'role': user_info['role'],
-                    'is_staff': user_info['is_staff'],
-                }
-            )
-            if created:
-                user.set_password(default_password)
-                user.save()
-                self.stdout.write(f"Created user: {user.email} (Password: {default_password})")
-            else:
-                self.stdout.write(f"User already exists: {user.email}")
-
-        # Create a Django superuser
-        superuser_email = 'superuser@hospital.org'
-        if not User.objects.filter(email=superuser_email).exists():
-            superuser = User.objects.create_superuser(
-                email=superuser_email,
-                name='Super User',
-                password=default_password,
-                role=roles['HOSPITAL_ADMINISTRATOR']
-            )
-            self.stdout.write(f"Created superuser: {superuser.email} (Password: {default_password})")
-        else:
-            self.stdout.write("Superuser already exists.")
-
+        # ── Hospitals ──────────────────────────────────────────────────
         self.stdout.write('Seeding hospitals...')
         hospitals_data = [
             {
@@ -118,19 +41,12 @@ class Command(BaseCommand):
                 'contact_number': '555-0199'
             },
             {
-                'hospital_name': 'St. Jude Clinic',
-                'address': '456 Mercy Blvd',
-                'city': 'Metropolis',
-                'state': 'NY',
-                'contact_number': '555-0188'
-            },
-            {
                 'hospital_name': 'Khargone District Hospital',
                 'address': 'Khandwa Road',
                 'city': 'Khargone',
                 'state': 'MP',
                 'contact_number': '555-0200'
-            }
+            },
         ]
 
         hospitals = {}
@@ -143,32 +59,179 @@ class Command(BaseCommand):
             if created:
                 self.stdout.write(f"Created hospital: {hospital.hospital_name}")
 
+        metro = hospitals['Metro General Hospital']
+        khargone = hospitals['Khargone District Hospital']
+
+        # ── Users ──────────────────────────────────────────────────────
+        self.stdout.write('Seeding mock users...')
+
+        default_password = 'Password123'
+
+        users_data = [
+            # ── Metro General Hospital users ──
+            {
+                'email': 'admin@metro.org',
+                'name': 'Metro Admin',
+                'role': roles['HOSPITAL_ADMINISTRATOR'],
+                'is_staff': True,
+                'hospital': metro,
+            },
+            {
+                'email': 'dispatcher@metro.org',
+                'name': 'Metro Dispatcher',
+                'role': roles['DISPATCHER'],
+                'is_staff': False,
+                'hospital': metro,
+            },
+            {
+                'email': 'fleet@metro.org',
+                'name': 'Metro Fleet Manager',
+                'role': roles['FLEET_MANAGER'],
+                'is_staff': False,
+                'hospital': metro,
+            },
+            {
+                'email': 'driver1@metro.org',
+                'name': 'Rahul Sharma',
+                'role': roles['DRIVER'],
+                'is_staff': False,
+                'hospital': metro,
+            },
+            {
+                'email': 'driver2@metro.org',
+                'name': 'Amit Patel',
+                'role': roles['DRIVER'],
+                'is_staff': False,
+                'hospital': metro,
+            },
+            {
+                'email': 'driver3@metro.org',
+                'name': 'Vijay Singh',
+                'role': roles['DRIVER'],
+                'is_staff': False,
+                'hospital': metro,
+            },
+            {
+                'email': 'citizen1@gmail.com',
+                'name': 'Priya Citizen',
+                'role': roles['EMERGENCY_REQUESTOR'],
+                'is_staff': False,
+                'hospital': metro,
+            },
+
+            # ── Khargone District Hospital users ──
+            {
+                'email': 'admin@khargone.org',
+                'name': 'Khargone Admin',
+                'role': roles['HOSPITAL_ADMINISTRATOR'],
+                'is_staff': True,
+                'hospital': khargone,
+            },
+            {
+                'email': 'dispatcher@khargone.org',
+                'name': 'Khargone Dispatcher',
+                'role': roles['DISPATCHER'],
+                'is_staff': False,
+                'hospital': khargone,
+            },
+            {
+                'email': 'fleet@khargone.org',
+                'name': 'Khargone Fleet Manager',
+                'role': roles['FLEET_MANAGER'],
+                'is_staff': False,
+                'hospital': khargone,
+            },
+            {
+                'email': 'driver1@khargone.org',
+                'name': 'Suresh Kumar',
+                'role': roles['DRIVER'],
+                'is_staff': False,
+                'hospital': khargone,
+            },
+            {
+                'email': 'driver2@khargone.org',
+                'name': 'Ramesh Yadav',
+                'role': roles['DRIVER'],
+                'is_staff': False,
+                'hospital': khargone,
+            },
+            {
+                'email': 'citizen2@gmail.com',
+                'name': 'Anil Citizen',
+                'role': roles['EMERGENCY_REQUESTOR'],
+                'is_staff': False,
+                'hospital': khargone,
+            },
+        ]
+
+        for user_info in users_data:
+            user, created = User.objects.get_or_create(
+                email=user_info['email'],
+                defaults={
+                    'name': user_info['name'],
+                    'role': user_info['role'],
+                    'is_staff': user_info['is_staff'],
+                    'hospital': user_info['hospital'],
+                }
+            )
+            if not created and user.hospital != user_info['hospital']:
+                user.hospital = user_info['hospital']
+                user.save()
+            if created:
+                user.set_password(default_password)
+                user.save()
+                self.stdout.write(f"Created user: {user.email} (Password: {default_password})")
+            else:
+                self.stdout.write(f"User already exists: {user.email}")
+
+        # Create a Django superuser (no hospital — can see everything)
+        superuser_email = 'superuser@hospital.org'
+        if not User.objects.filter(email=superuser_email).exists():
+            superuser = User.objects.create_superuser(
+                email=superuser_email,
+                name='Super User',
+                password=default_password,
+                role=roles['HOSPITAL_ADMINISTRATOR'],
+            )
+            self.stdout.write(f"Created superuser: {superuser.email} (Password: {default_password})")
+        else:
+            self.stdout.write("Superuser already exists.")
+
+        # ── Stations ───────────────────────────────────────────────────
         self.stdout.write('Seeding stations...')
         stations_data = [
+            # Metro General Hospital stations
             {
-                'hospital': hospitals['Metro General Hospital'],
-                'station_name': 'Station Alpha - Downtown',
+                'hospital': metro,
+                'station_name': 'Metro Downtown Station',
                 'latitude': 40.7128,
                 'longitude': -74.0060
             },
             {
-                'hospital': hospitals['Metro General Hospital'],
-                'station_name': 'Station Beta - Uptown',
+                'hospital': metro,
+                'station_name': 'Metro Uptown Station',
                 'latitude': 40.7589,
                 'longitude': -73.9851
             },
             {
-                'hospital': hospitals['St. Jude Clinic'],
-                'station_name': 'Station Gamma - East Side',
+                'hospital': metro,
+                'station_name': 'Metro East Side Station',
                 'latitude': 40.7484,
                 'longitude': -73.9857
             },
+            # Khargone District Hospital stations
             {
-                'hospital': hospitals['Khargone District Hospital'],
+                'hospital': khargone,
                 'station_name': 'Khargone Central Station',
                 'latitude': 21.820600,
                 'longitude': 75.609400
-            }
+            },
+            {
+                'hospital': khargone,
+                'station_name': 'Khargone Highway Station',
+                'latitude': 21.835000,
+                'longitude': 75.620000
+            },
         ]
 
         stations = {}
@@ -181,11 +244,16 @@ class Command(BaseCommand):
             if created:
                 self.stdout.write(f"Created station: {station.station_name}")
 
+        # ── Drivers ────────────────────────────────────────────────────
         self.stdout.write('Seeding drivers...')
         driver_users = [
-            {'email': 'driver@hospital.org', 'license_no': 'DL-12345678', 'contact': '555-0100'},
-            {'email': 'driver2@hospital.org', 'license_no': 'DL-87654321', 'contact': '555-0101'},
-            {'email': 'driver3@hospital.org', 'license_no': 'DL-11223344', 'contact': '555-0102'}
+            # Metro drivers
+            {'email': 'driver1@metro.org', 'license_no': 'DL-MET-001', 'contact': '9876543210'},
+            {'email': 'driver2@metro.org', 'license_no': 'DL-MET-002', 'contact': '9876543211'},
+            {'email': 'driver3@metro.org', 'license_no': 'DL-MET-003', 'contact': '9876543212'},
+            # Khargone drivers
+            {'email': 'driver1@khargone.org', 'license_no': 'DL-KHG-001', 'contact': '9123456780'},
+            {'email': 'driver2@khargone.org', 'license_no': 'DL-KHG-002', 'contact': '9123456781'},
         ]
         for info in driver_users:
             user = User.objects.get(email=info['email'])
@@ -200,36 +268,60 @@ class Command(BaseCommand):
             if created:
                 self.stdout.write(f"Created driver profile for user: {user.email}")
 
+        # ── Ambulances ─────────────────────────────────────────────────
         self.stdout.write('Seeding ambulances...')
         ambulances_data = [
+            # Metro General Hospital ambulances
             {
-                'ambulance_number': 'AMB-001',
-                'hospital': hospitals['Metro General Hospital'],
-                'station': stations['Station Alpha - Downtown'],
+                'ambulance_number': 'MET-AMB-001',
+                'hospital': metro,
+                'station': stations['Metro Downtown Station'],
                 'type': 'Advanced Life Support',
                 'status': 'ACTIVE'
             },
             {
-                'ambulance_number': 'AMB-002',
-                'hospital': hospitals['Metro General Hospital'],
-                'station': stations['Station Beta - Uptown'],
+                'ambulance_number': 'MET-AMB-002',
+                'hospital': metro,
+                'station': stations['Metro Uptown Station'],
                 'type': 'Basic Life Support',
+                'status': 'ACTIVE'
+            },
+            {
+                'ambulance_number': 'MET-AMB-003',
+                'hospital': metro,
+                'station': stations['Metro East Side Station'],
+                'type': 'Patient Transport',
+                'status': 'ACTIVE'
+            },
+            {
+                'ambulance_number': 'MET-AMB-004',
+                'hospital': metro,
+                'station': stations['Metro Downtown Station'],
+                'type': 'Advanced Life Support',
                 'status': 'MAINTENANCE'
             },
+            # Khargone District Hospital ambulances
             {
-                'ambulance_number': 'AMB-003',
-                'hospital': hospitals['St. Jude Clinic'],
-                'station': stations['Station Gamma - East Side'],
-                'type': 'Patient Transport',
-                'status': 'INACTIVE'
-            },
-            {
-                'ambulance_number': 'AMB-MP-09',
-                'hospital': hospitals['Khargone District Hospital'],
+                'ambulance_number': 'KHG-AMB-001',
+                'hospital': khargone,
                 'station': stations['Khargone Central Station'],
                 'type': 'Advanced Life Support',
                 'status': 'ACTIVE'
-            }
+            },
+            {
+                'ambulance_number': 'KHG-AMB-002',
+                'hospital': khargone,
+                'station': stations['Khargone Highway Station'],
+                'type': 'Basic Life Support',
+                'status': 'ACTIVE'
+            },
+            {
+                'ambulance_number': 'KHG-AMB-003',
+                'hospital': khargone,
+                'station': stations['Khargone Central Station'],
+                'type': 'Patient Transport',
+                'status': 'MAINTENANCE'
+            },
         ]
 
         for amb_info in ambulances_data:
@@ -240,6 +332,7 @@ class Command(BaseCommand):
             if created:
                 self.stdout.write(f"Created ambulance: {ambulance.ambulance_number}")
 
+        # ── Equipment ──────────────────────────────────────────────────
         self.stdout.write('Seeding equipment...')
         equipment_names = ['Defibrillator', 'Ventilator', 'Oxygen Tank', 'First Aid Kit', 'Trauma Kit']
         equipments = {}
@@ -249,27 +342,101 @@ class Command(BaseCommand):
             if created:
                 self.stdout.write(f"Created equipment: {name}")
 
-        # Link equipment to mock ambulances
-        amb_001 = Ambulance.objects.filter(ambulance_number='AMB-001').first()
-        if amb_001:
-            amb_001.equipment.add(equipments['Defibrillator'], equipments['Ventilator'], equipments['Oxygen Tank'], equipments['First Aid Kit'])
-            self.stdout.write("Assigned equipment to AMB-001")
+        # Link equipment to ambulances
+        equipment_map = {
+            'MET-AMB-001': ['Defibrillator', 'Ventilator', 'Oxygen Tank', 'First Aid Kit'],
+            'MET-AMB-002': ['Oxygen Tank', 'First Aid Kit', 'Trauma Kit'],
+            'MET-AMB-003': ['First Aid Kit'],
+            'MET-AMB-004': ['Defibrillator', 'Oxygen Tank', 'First Aid Kit'],
+            'KHG-AMB-001': ['Defibrillator', 'Ventilator', 'Oxygen Tank', 'First Aid Kit'],
+            'KHG-AMB-002': ['Oxygen Tank', 'First Aid Kit'],
+            'KHG-AMB-003': ['First Aid Kit', 'Trauma Kit'],
+        }
+        for amb_num, eq_names in equipment_map.items():
+            amb = Ambulance.objects.filter(ambulance_number=amb_num).first()
+            if amb:
+                amb.equipment.add(*[equipments[n] for n in eq_names])
+                self.stdout.write(f"Assigned equipment to {amb_num}")
 
-        amb_002 = Ambulance.objects.filter(ambulance_number='AMB-002').first()
-        if amb_002:
-            amb_002.equipment.add(equipments['Oxygen Tank'], equipments['First Aid Kit'])
-            self.stdout.write("Assigned equipment to AMB-002")
+        # ── Emergency Requests ─────────────────────────────────────────
+        self.stdout.write('Seeding emergency requests...')
+        from ambulances.models import EmergencyRequest
 
-        amb_003 = Ambulance.objects.filter(ambulance_number='AMB-003').first()
-        if amb_003:
-            amb_003.equipment.add(equipments['First Aid Kit'])
-            self.stdout.write("Assigned equipment to AMB-003")
+        emergency_requests_data = [
+            # Metro hospital emergency requests
+            {
+                'requester_name': 'Ankit Verma',
+                'contact_number': '9988776655',
+                'emergency_type': 'Cardiac Arrest',
+                'priority': 'CRITICAL',
+                'pickup_location': '42 Broadway, Metropolis',
+                'latitude': 40.7127,
+                'longitude': -74.0059,
+                'status': 'PENDING',
+                'hospital': metro,
+                'created_by': User.objects.get(email='citizen1@gmail.com'),
+            },
+            {
+                'requester_name': 'Sneha Gupta',
+                'contact_number': '9977665544',
+                'emergency_type': 'Road Accident',
+                'priority': 'HIGH',
+                'pickup_location': '15 Park Ave, Metropolis',
+                'latitude': 40.7500,
+                'longitude': -73.9800,
+                'status': 'PENDING',
+                'hospital': metro,
+                'created_by': User.objects.get(email='citizen1@gmail.com'),
+            },
+            {
+                'requester_name': 'Ravi Kumar',
+                'contact_number': '9966554433',
+                'emergency_type': 'Stroke',
+                'priority': 'CRITICAL',
+                'pickup_location': '88 5th Ave, Metropolis',
+                'latitude': 40.7400,
+                'longitude': -73.9900,
+                'status': 'PENDING',
+                'hospital': metro,
+                'created_by': User.objects.get(email='dispatcher@metro.org'),
+            },
+            # Khargone hospital emergency requests
+            {
+                'requester_name': 'Mohan Patel',
+                'contact_number': '9111222333',
+                'emergency_type': 'Snakebite',
+                'priority': 'HIGH',
+                'pickup_location': 'Village Bhanpur, Khargone',
+                'latitude': 21.8200,
+                'longitude': 75.6100,
+                'status': 'PENDING',
+                'hospital': khargone,
+                'created_by': User.objects.get(email='citizen2@gmail.com'),
+            },
+            {
+                'requester_name': 'Sunita Devi',
+                'contact_number': '9222333444',
+                'emergency_type': 'Fall Injury',
+                'priority': 'MEDIUM',
+                'pickup_location': 'Main Bazaar, Khargone',
+                'latitude': 21.8250,
+                'longitude': 75.6150,
+                'status': 'PENDING',
+                'hospital': khargone,
+                'created_by': User.objects.get(email='dispatcher@khargone.org'),
+            },
+        ]
 
-        amb_mp_09 = Ambulance.objects.filter(ambulance_number='AMB-MP-09').first()
-        if amb_mp_09:
-            amb_mp_09.equipment.add(equipments['Defibrillator'], equipments['Oxygen Tank'], equipments['First Aid Kit'])
-            self.stdout.write("Assigned equipment to AMB-MP-09")
+        for er_info in emergency_requests_data:
+            er, created = EmergencyRequest.objects.get_or_create(
+                requester_name=er_info['requester_name'],
+                contact_number=er_info['contact_number'],
+                defaults=er_info
+            )
+            if created:
+                self.stdout.write(f"Created emergency request: {er.requester_name} ({er.emergency_type})")
 
+        # ── Active Shifts ──────────────────────────────────────────────
         self.stdout.write('Seeding active shifts for drivers...')
         from django.utils import timezone
         from datetime import timedelta
@@ -287,5 +454,29 @@ class Command(BaseCommand):
             )
             self.stdout.write(f"Created active shift for driver: {d.user.email}")
 
-        self.stdout.write(self.style.SUCCESS('Database seeding completed successfully.'))
-
+        # ── Summary ───────────────────────────────────────────────────
+        self.stdout.write('')
+        self.stdout.write(self.style.SUCCESS('═' * 60))
+        self.stdout.write(self.style.SUCCESS('  DATABASE SEEDING COMPLETED SUCCESSFULLY'))
+        self.stdout.write(self.style.SUCCESS('═' * 60))
+        self.stdout.write('')
+        self.stdout.write(self.style.WARNING('  TEST ACCOUNTS (Password for all: Password123)'))
+        self.stdout.write(self.style.WARNING('─' * 60))
+        self.stdout.write('')
+        self.stdout.write(self.style.SUCCESS('  ▸ METRO GENERAL HOSPITAL'))
+        self.stdout.write('    Admin:       admin@metro.org')
+        self.stdout.write('    Dispatcher:  dispatcher@metro.org')
+        self.stdout.write('    Fleet Mgr:   fleet@metro.org')
+        self.stdout.write('    Drivers:     driver1@metro.org, driver2@metro.org, driver3@metro.org')
+        self.stdout.write('    Citizen:     citizen1@gmail.com')
+        self.stdout.write('')
+        self.stdout.write(self.style.SUCCESS('  ▸ KHARGONE DISTRICT HOSPITAL'))
+        self.stdout.write('    Admin:       admin@khargone.org')
+        self.stdout.write('    Dispatcher:  dispatcher@khargone.org')
+        self.stdout.write('    Fleet Mgr:   fleet@khargone.org')
+        self.stdout.write('    Drivers:     driver1@khargone.org, driver2@khargone.org')
+        self.stdout.write('    Citizen:     citizen2@gmail.com')
+        self.stdout.write('')
+        self.stdout.write(self.style.WARNING('  ▸ SUPERUSER (sees ALL hospitals)'))
+        self.stdout.write('    Email:       superuser@hospital.org')
+        self.stdout.write('')

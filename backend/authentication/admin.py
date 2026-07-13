@@ -2,13 +2,13 @@ from django.contrib import admin
 from .models import Role, User, AuditLog
 
 class CustomUserAdmin(admin.ModelAdmin):
-    list_display = ('email', 'name', 'role', 'is_active', 'is_staff')
-    list_filter = ('role', 'is_active', 'is_staff')
+    list_display = ('email', 'name', 'role', 'hospital', 'is_active', 'is_staff')
+    list_filter = ('role', 'hospital', 'is_active', 'is_staff')
     search_fields = ('email', 'name')
     ordering = ('email',)
     fieldsets = (
         (None, {'fields': ('email', 'password')}),
-        ('Personal Info', {'fields': ('name', 'role')}),
+        ('Personal Info', {'fields': ('name', 'role', 'hospital')}),
         ('Permissions', {'fields': ('is_active', 'is_staff', 'is_superuser')}),
     )
 

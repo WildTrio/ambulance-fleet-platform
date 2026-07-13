@@ -332,7 +332,7 @@ class DriverManagementAPITests(APITestCase):
         self.driver_user = User.objects.create_user(email='driver@h.org', name='Driver', password='Password123!', role=self.driver_role)
 
         # Create driver
-        self.driver = Driver.objects.create(user=self.driver_user, contact="555-0100", license_number="DL-1111", availability=True)
+        self.driver = Driver.objects.create(user=self.driver_user, contact="5550100000", license_number="DL-1111", availability=True)
 
     def test_list_drivers_rbac(self):
         # Dispatcher, Fleet, Admin allowed
@@ -352,7 +352,7 @@ class DriverManagementAPITests(APITestCase):
             "name": "New Driver",
             "email": "newdriver@h.org",
             "password": "Password123!",
-            "contact": "555-9999",
+            "contact": "5559999999",
             "license_number": "DL-2222",
             "availability": True
         }
@@ -373,7 +373,7 @@ class DriverManagementAPITests(APITestCase):
         data = {
             "name": "Another Driver",
             "email": "driver@h.org", # Duplicate email
-            "contact": "123-4567",
+            "contact": "1234567890",
             "license_number": "DL-UNIQUE",
             "availability": True
         }
@@ -386,7 +386,7 @@ class DriverManagementAPITests(APITestCase):
         data = {
             "name": "Another Driver",
             "email": "another@h.org",
-            "contact": "123-4567",
+            "contact": "1234567890",
             "license_number": "DL-1111", # Duplicate license
             "availability": True
         }
@@ -398,7 +398,7 @@ class DriverManagementAPITests(APITestCase):
         data = {
             "name": "Another Driver",
             "email": "another2@h.org",
-            "contact": "555-0100", # Duplicate contact (from self.driver in setUp)
+            "contact": "5550100000", # Duplicate contact (from self.driver in setUp)
             "license_number": "DL-UNIQUE",
             "availability": True
         }
@@ -411,7 +411,7 @@ class DriverManagementAPITests(APITestCase):
         data = {
             "name": "Updated Name",
             "email": "driver@h.org",
-            "contact": "999-9999",
+            "contact": "9999999999",
             "license_number": "DL-1111-UPDATED",
             "availability": False
         }
@@ -552,7 +552,7 @@ class ShiftCertificationAPITests(APITestCase):
         self.dispatcher_user = User.objects.create_user(email='disp@h.org', name='Disp', password='Password123!', role=self.dispatcher_role)
         self.driver_user = User.objects.create_user(email='driver@h.org', name='Driver', password='Password123!', role=self.driver_role)
 
-        self.driver = Driver.objects.create(user=self.driver_user, contact="555-0100", license_number="DL-1111", availability=True)
+        self.driver = Driver.objects.create(user=self.driver_user, contact="5550100000", license_number="DL-1111", availability=True)
 
     def test_shift_crud(self):
         # Create Shift
@@ -645,7 +645,7 @@ class DispatchConsoleMissionTests(APITestCase):
         self.citizen_user = User.objects.create_user(email='citizen@g.com', name='Citizen', password='Password123!', role=self.citizen_role)
 
         # Drivers
-        self.driver1 = Driver.objects.create(user=self.driver_user, contact="555-0101", license_number="DL-101", availability=True)
+        self.driver1 = Driver.objects.create(user=self.driver_user, contact="5550100001", license_number="DL-101", availability=True)
         
         # Hospital & Stations
         self.hospital = Hospital.objects.create(hospital_name="City Hospital", address="123 Hospital St", city="City", state="State", contact_number="1234567")
@@ -771,7 +771,7 @@ class DispatchConsoleMissionTests(APITestCase):
         
         # Create a second driver who is available
         driver2_user = User.objects.create_user(email='driver2_test@h.org', name='Driver 2', password='Password123!', role=self.driver_role)
-        driver2 = Driver.objects.create(user=driver2_user, contact="555-0102", license_number="DL-102", availability=True)
+        driver2 = Driver.objects.create(user=driver2_user, contact="5550100002", license_number="DL-102", availability=True)
         
         # Create Mission with driver_id specified
         url = reverse('mission-list')
@@ -802,7 +802,7 @@ class DispatchConsoleMissionTests(APITestCase):
         
         # Create a new available driver
         driver3_user = User.objects.create_user(email='driver3_test@h.org', name='Driver 3', password='Password123!', role=self.driver_role)
-        driver3 = Driver.objects.create(user=driver3_user, contact="555-0103", license_number="DL-103", availability=True)
+        driver3 = Driver.objects.create(user=driver3_user, contact="5550100003", license_number="DL-103", availability=True)
         
         url = reverse('ambulance-assign-driver', kwargs={'pk': str(self.amb2.id)})
         data = {

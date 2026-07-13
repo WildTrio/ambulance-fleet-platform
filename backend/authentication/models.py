@@ -14,6 +14,17 @@ class UserManager(BaseUserManager):
         if not email:
             raise ValueError('Users must have an email address')
         email = self.normalize_email(email)
+        
+        # Fallback to first hospital if not provided (convenient for tests)
+        if not extra_fields.get('hospital'):
+            try:
+                from ambulances.models import Hospital
+                first_hospital = Hospital.objects.first()
+                if first_hospital:
+                    extra_fields['hospital'] = first_hospital
+            except Exception:
+                pass
+
         user = self.model(email=email, name=name, role=role, **extra_fields)
         user.set_password(password)
         user.save(using=self._db)
@@ -36,6 +47,13 @@ class User(AbstractBaseUser, PermissionsMixin):
     name = models.CharField(max_length=100)
     email = models.EmailField(max_length=255, unique=True)
     role = models.ForeignKey(Role, on_delete=models.PROTECT, related_name='users', null=True)
+    hospital = models.ForeignKey(
+        'ambulances.Hospital',
+        on_delete=models.PROTECT,
+        related_name='users',
+        null=True,
+        blank=True
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

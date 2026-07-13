@@ -23,6 +23,22 @@ from .serializers import (
     MissionSerializer, EquipmentSerializer, TripSerializer, GPSLogSerializer
 )
 
+def get_user_hospital(user):
+    """Return the user's hospital, falling back to the first hospital in the DB.
+    When using the fallback, batch-assigns all users without a hospital so
+    that subsequent queryset filters (user__hospital=hospital) match correctly."""
+    if not user or not user.is_authenticated:
+        return None
+    if user.hospital:
+        return user.hospital
+    first_hospital = Hospital.objects.first()
+    if first_hospital:
+        from django.contrib.auth import get_user_model
+        User = get_user_model()
+        User.objects.filter(hospital__isnull=True).update(hospital=first_hospital)
+        user.hospital = first_hospital
+    return user.hospital
+
 class AmbulancePermission(permissions.BasePermission):
     """
     RBAC permission guard for ambulances:
@@ -85,7 +101,7 @@ class AmbulanceViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        ambulances = Ambulance.objects.all().order_by('ambulance_number')
+        ambulances = self.get_queryset()
         routing_results = self._get_ambulances_with_distances(lat, lon, ambulances)
 
         results = []
@@ -202,8 +218,14 @@ class AmbulanceViewSet(viewsets.ModelViewSet):
             has_driver_bool = has_driver_filter.lower() in ['true', '1', 'yes']
 
         # Get all ACTIVE ambulances that are not currently occupied on an active mission
-        active_missions_amb_ids = Mission.objects.exclude(status__in=['COMPLETED', 'CANCELLED']).values_list('ambulance_id', flat=True)
-        ambulances = Ambulance.objects.filter(status='ACTIVE').exclude(id__in=active_missions_amb_ids).prefetch_related('equipment')
+        user = request.user
+        hospital = get_user_hospital(user)
+        if user.is_superuser and not user.hospital:
+            active_missions_amb_ids = Mission.objects.exclude(status__in=['COMPLETED', 'CANCELLED']).values_list('ambulance_id', flat=True)
+            ambulances = Ambulance.objects.filter(status='ACTIVE').exclude(id__in=active_missions_amb_ids).prefetch_related('equipment')
+        else:
+            active_missions_amb_ids = Mission.objects.filter(ambulance__hospital=hospital).exclude(status__in=['COMPLETED', 'CANCELLED']).values_list('ambulance_id', flat=True)
+            ambulances = self.get_queryset().filter(status='ACTIVE').exclude(id__in=active_missions_amb_ids).prefetch_related('equipment')
 
         if type_filter:
             ambulances = ambulances.filter(type=type_filter)
@@ -309,7 +331,15 @@ class AmbulanceViewSet(viewsets.ModelViewSet):
         return Response(results, status=status.HTTP_200_OK)
 
     def get_queryset(self):
-        queryset = super().get_queryset()
+        user = self.request.user
+        if not user or not user.is_authenticated:
+            return Ambulance.objects.none()
+        if user.is_superuser and not user.hospital:
+            queryset = Ambulance.objects.all().order_by('ambulance_number')
+        else:
+            hospital = get_user_hospital(user)
+            queryset = Ambulance.objects.filter(hospital=hospital).order_by('ambulance_number')
+
         status_filter = self.request.query_params.get('status')
         type_filter = self.request.query_params.get('type')
         station_filter = self.request.query_params.get('station_id')
@@ -321,6 +351,10 @@ class AmbulanceViewSet(viewsets.ModelViewSet):
         if station_filter:
             queryset = queryset.filter(station_id=station_filter)
         return queryset
+
+    def perform_create(self, serializer):
+        hospital = get_user_hospital(self.request.user)
+        serializer.save(hospital=hospital)
 
     def update(self, request, *args, **kwargs):
         instance = self.get_object()
@@ -859,19 +893,36 @@ class AmbulanceViewSet(viewsets.ModelViewSet):
 
 
 class HospitalViewSet(viewsets.ReadOnlyModelViewSet):
-    queryset = Hospital.objects.all().order_by('hospital_name')
     serializer_class = HospitalSerializer
     permission_classes = [IsAuthenticated]
     
+    def get_queryset(self):
+        user = self.request.user
+        if not user or not user.is_authenticated:
+            return Hospital.objects.none()
+        if user.is_superuser and not user.hospital:
+            return Hospital.objects.all().order_by('hospital_name')
+        hospital = get_user_hospital(user)
+        return Hospital.objects.filter(id=hospital.id).order_by('hospital_name') if hospital else Hospital.objects.none()
+
     def get_permissions(self):
         if self.request.user.is_superuser:
             return [permissions.AllowAny()]
         return [AmbulancePermission()]
 
+
 class StationViewSet(viewsets.ReadOnlyModelViewSet):
-    queryset = Station.objects.all().order_by('station_name')
     serializer_class = StationSerializer
     permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        if not user or not user.is_authenticated:
+            return Station.objects.none()
+        if user.is_superuser and not user.hospital:
+            return Station.objects.all().order_by('station_name')
+        hospital = get_user_hospital(user)
+        return Station.objects.filter(hospital=hospital).order_by('station_name')
 
     def get_permissions(self):
         if self.request.user.is_superuser:
@@ -898,12 +949,18 @@ class DriverPermission(permissions.BasePermission):
         return user_role in ['HOSPITAL_ADMINISTRATOR', 'FLEET_MANAGER']
 
 class DriverViewSet(viewsets.ModelViewSet):
-    queryset = Driver.objects.all().order_by('user__name')
     serializer_class = DriverSerializer
     permission_classes = [IsAuthenticated, DriverPermission]
 
     def get_queryset(self):
-        queryset = super().get_queryset()
+        user = self.request.user
+        if not user or not user.is_authenticated:
+            return Driver.objects.none()
+        if user.is_superuser and not user.hospital:
+            queryset = Driver.objects.all().order_by('user__name')
+        else:
+            hospital = get_user_hospital(user)
+            queryset = Driver.objects.filter(user__hospital=hospital).order_by('user__name')
         available = self.request.query_params.get('available')
         if available == 'true':
             queryset = queryset.filter(availability=True)
@@ -922,24 +979,36 @@ class DriverViewSet(viewsets.ModelViewSet):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 class ShiftViewSet(viewsets.ModelViewSet):
-    queryset = Shift.objects.all().order_by('-start_time')
     serializer_class = ShiftSerializer
     permission_classes = [IsAuthenticated, DriverPermission]
 
     def get_queryset(self):
-        queryset = super().get_queryset()
+        user = self.request.user
+        if not user or not user.is_authenticated:
+            return Shift.objects.none()
+        if user.is_superuser and not user.hospital:
+            queryset = Shift.objects.all().order_by('-start_time')
+        else:
+            hospital = get_user_hospital(user)
+            queryset = Shift.objects.filter(driver__user__hospital=hospital).order_by('-start_time')
         driver_id = self.request.query_params.get('driver_id')
         if driver_id:
             queryset = queryset.filter(driver_id=driver_id)
         return queryset
 
 class CertificationViewSet(viewsets.ModelViewSet):
-    queryset = Certification.objects.all().order_by('expiry_date')
     serializer_class = CertificationSerializer
     permission_classes = [IsAuthenticated, DriverPermission]
 
     def get_queryset(self):
-        queryset = super().get_queryset()
+        user = self.request.user
+        if not user or not user.is_authenticated:
+            return Certification.objects.none()
+        if user.is_superuser and not user.hospital:
+            queryset = Certification.objects.all().order_by('expiry_date')
+        else:
+            hospital = get_user_hospital(user)
+            queryset = Certification.objects.filter(driver__user__hospital=hospital).order_by('expiry_date')
         driver_id = self.request.query_params.get('driver_id')
         if driver_id:
             queryset = queryset.filter(driver_id=driver_id)
@@ -979,6 +1048,11 @@ class EmergencyRequestPermission(permissions.BasePermission):
 
         user_role = request.user.role.name if request.user.role else None
 
+        # Check hospital isolation
+        hospital = get_user_hospital(request.user)
+        if hospital and obj.hospital != hospital:
+            return False
+
         if request.method == 'DELETE':
             return True
 
@@ -998,14 +1072,17 @@ class EmergencyRequestViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         user = self.request.user
-        if user.is_superuser:
+        if not user or not user.is_authenticated:
+            return EmergencyRequest.objects.none()
+        if user.is_superuser and not user.hospital:
             queryset = EmergencyRequest.objects.all()
         else:
+            hospital = get_user_hospital(user)
             user_role = user.role.name if user.role else None
             if user_role in ['HOSPITAL_ADMINISTRATOR', 'DISPATCHER']:
-                queryset = EmergencyRequest.objects.all()
+                queryset = EmergencyRequest.objects.filter(hospital=hospital)
             elif user_role == 'EMERGENCY_REQUESTOR':
-                queryset = EmergencyRequest.objects.filter(created_by=user)
+                queryset = EmergencyRequest.objects.filter(created_by=user, hospital=hospital)
             else:
                 return EmergencyRequest.objects.none()
 
@@ -1039,7 +1116,8 @@ class EmergencyRequestViewSet(viewsets.ModelViewSet):
         user = self.request.user
         user_role = user.role.name if (not user.is_superuser and user.role) else None
 
-        extra_kwargs = {'status': 'PENDING', 'created_by': user}
+        hospital = get_user_hospital(user)
+        extra_kwargs = {'status': 'PENDING', 'created_by': user, 'hospital': hospital}
         if user_role == 'EMERGENCY_REQUESTOR':
             extra_kwargs['priority'] = 'MEDIUM'
 
@@ -1151,6 +1229,11 @@ class MissionPermission(permissions.BasePermission):
     def has_object_permission(self, request, view, obj):
         if request.user.is_superuser:
             return True
+
+        # Check hospital isolation
+        hospital = get_user_hospital(request.user)
+        if hospital and obj.ambulance.hospital != hospital:
+            return False
             
         user_role = request.user.role.name if request.user.role else None
         if user_role in ['HOSPITAL_ADMINISTRATOR', 'DISPATCHER']:
@@ -1163,20 +1246,22 @@ class MissionPermission(permissions.BasePermission):
 
 
 class MissionViewSet(viewsets.ModelViewSet):
-    queryset = Mission.objects.all().order_by('-created_at')
     serializer_class = MissionSerializer
     permission_classes = [IsAuthenticated, MissionPermission]
 
     def get_queryset(self):
         user = self.request.user
-        if user.is_superuser:
+        if not user or not user.is_authenticated:
+            return Mission.objects.none()
+        if user.is_superuser and not user.hospital:
             queryset = Mission.objects.all()
         else:
+            hospital = get_user_hospital(user)
             user_role = user.role.name if user.role else None
             if user_role in ['HOSPITAL_ADMINISTRATOR', 'DISPATCHER']:
-                queryset = Mission.objects.all()
+                queryset = Mission.objects.filter(ambulance__hospital=hospital)
             elif user_role == 'DRIVER':
-                queryset = Mission.objects.filter(driver__user=user)
+                queryset = Mission.objects.filter(driver__user=user, ambulance__hospital=hospital)
             else:
                 return Mission.objects.none()
 
@@ -1327,6 +1412,12 @@ class TripPermission(permissions.BasePermission):
     def has_object_permission(self, request, view, obj):
         if request.user.is_superuser:
             return True
+
+        # Check hospital isolation
+        hospital = get_user_hospital(request.user)
+        if hospital and obj.ambulance.hospital != hospital:
+            return False
+
         user_role = request.user.role.name if request.user.role else None
         if user_role in ['HOSPITAL_ADMINISTRATOR', 'FLEET_MANAGER', 'DISPATCHER']:
             return True
@@ -1336,23 +1427,25 @@ class TripPermission(permissions.BasePermission):
 
 
 class TripViewSet(viewsets.ReadOnlyModelViewSet):
-    queryset = Trip.objects.all().order_by('-created_at')
     serializer_class = TripSerializer
     permission_classes = [IsAuthenticated, TripPermission]
 
     def get_queryset(self):
         user = self.request.user
-        if user.is_superuser:
+        if not user or not user.is_authenticated:
+            return Trip.objects.none()
+        if user.is_superuser and not user.hospital:
             queryset = Trip.objects.all().order_by('-created_at')
         else:
+            hospital = get_user_hospital(user)
             user_role = user.role.name if user.role else None
             if user_role in ['HOSPITAL_ADMINISTRATOR', 'FLEET_MANAGER', 'DISPATCHER']:
-                queryset = Trip.objects.all().order_by('-created_at')
+                queryset = Trip.objects.filter(ambulance__hospital=hospital).order_by('-created_at')
             elif user_role == 'DRIVER':
                 if self.action in ['retrieve', 'route_history']:
-                    queryset = Trip.objects.all().order_by('-created_at')
+                    queryset = Trip.objects.filter(ambulance__hospital=hospital).order_by('-created_at')
                 else:
-                    queryset = Trip.objects.filter(driver__user=user).order_by('-created_at')
+                    queryset = Trip.objects.filter(driver__user=user, ambulance__hospital=hospital).order_by('-created_at')
             else:
                 return Trip.objects.none()
 
@@ -1385,7 +1478,8 @@ class TripViewSet(viewsets.ReadOnlyModelViewSet):
                 {"detail": "Only drivers can view their personal trip logs."},
                 status=status.HTTP_403_FORBIDDEN
             )
-        trips = Trip.objects.filter(driver__user=user).order_by('-created_at')
+        hospital = get_user_hospital(user)
+        trips = Trip.objects.filter(driver__user=user, ambulance__hospital=hospital).order_by('-created_at')
         
         status_param = request.query_params.get('status')
         start_date = request.query_params.get('start_date')
@@ -1423,15 +1517,19 @@ class DispatcherDashboardView(APIView):
             )
 
         # 1. Pending Requests
-        pending_requests = EmergencyRequest.objects.filter(status='PENDING').order_by('created_at')
+        user = request.user
+        if user.is_superuser and not user.hospital:
+            pending_requests = EmergencyRequest.objects.filter(status='PENDING').order_by('created_at')
+            active_missions = Mission.objects.exclude(status__in=['COMPLETED', 'CANCELLED']).order_by('-created_at')
+            available_ambulances = Ambulance.objects.filter(status='ACTIVE', lifecycle_status='AVAILABLE').order_by('ambulance_number')
+        else:
+            hospital = get_user_hospital(user)
+            pending_requests = EmergencyRequest.objects.filter(status='PENDING', hospital=hospital).order_by('created_at')
+            active_missions = Mission.objects.filter(ambulance__hospital=hospital).exclude(status__in=['COMPLETED', 'CANCELLED']).order_by('-created_at')
+            available_ambulances = Ambulance.objects.filter(status='ACTIVE', lifecycle_status='AVAILABLE', hospital=hospital).order_by('ambulance_number')
+
         pending_requests_serialized = EmergencyRequestSerializer(pending_requests, many=True, context={'request': request}).data
-
-        # 2. Active Missions
-        active_missions = Mission.objects.exclude(status__in=['COMPLETED', 'CANCELLED']).order_by('-created_at')
         active_missions_serialized = MissionSerializer(active_missions, many=True, context={'request': request}).data
-
-        # 3. Available Ambulances
-        available_ambulances = Ambulance.objects.filter(status='ACTIVE', lifecycle_status='AVAILABLE').order_by('ambulance_number')
         available_ambulances_serialized = AmbulanceSerializer(available_ambulances, many=True, context={'request': request}).data
 
         return Response({
@@ -1456,17 +1554,28 @@ class FleetDashboardView(APIView):
             )
 
         # 1. Fleet summary
-        total_ambulances = Ambulance.objects.count()
+        user = request.user
+        if user.is_superuser and not user.hospital:
+            ambulances_qs = Ambulance.objects.all()
+            drivers_qs = Driver.objects.all()
+            shifts_qs = Shift.objects.all()
+        else:
+            hospital = get_user_hospital(user)
+            ambulances_qs = Ambulance.objects.filter(hospital=hospital)
+            drivers_qs = Driver.objects.filter(user__hospital=hospital)
+            shifts_qs = Shift.objects.filter(driver__user__hospital=hospital)
+
+        total_ambulances = ambulances_qs.count()
         
-        active_count = Ambulance.objects.filter(status='ACTIVE').count()
-        maintenance_count = Ambulance.objects.filter(status='MAINTENANCE').count()
-        inactive_count = Ambulance.objects.filter(status='INACTIVE').count()
+        active_count = ambulances_qs.filter(status='ACTIVE').count()
+        maintenance_count = ambulances_qs.filter(status='MAINTENANCE').count()
+        inactive_count = ambulances_qs.filter(status='INACTIVE').count()
         
         lifecycle_counts = {}
         for choice in Ambulance.LIFECYCLE_STATUS_CHOICES:
-            lifecycle_counts[choice[0]] = Ambulance.objects.filter(lifecycle_status=choice[0]).count()
+            lifecycle_counts[choice[0]] = ambulances_qs.filter(lifecycle_status=choice[0]).count()
             
-        available_active_count = Ambulance.objects.filter(status='ACTIVE', lifecycle_status='AVAILABLE').count()
+        available_active_count = ambulances_qs.filter(status='ACTIVE', lifecycle_status='AVAILABLE').count()
         availability_rate = round((available_active_count / active_count * 100), 1) if active_count > 0 else 0.0
 
         fleet_summary = {
@@ -1481,7 +1590,7 @@ class FleetDashboardView(APIView):
         }
 
         # 2. Maintenance Status (Ambulances in MAINTENANCE admin status or SANITIZATION lifecycle status)
-        maintenance_ambulances = Ambulance.objects.filter(
+        maintenance_ambulances = ambulances_qs.filter(
             Q(status='MAINTENANCE') | Q(lifecycle_status='SANITIZATION')
         ).distinct()
 
@@ -1512,16 +1621,16 @@ class FleetDashboardView(APIView):
             })
 
         # 3. Driver Availability
-        total_drivers = Driver.objects.count()
-        available_drivers_count = Driver.objects.filter(availability=True).count()
+        total_drivers = drivers_qs.count()
+        available_drivers_count = drivers_qs.filter(availability=True).count()
         
         now_time = timezone.now()
-        on_duty_driver_ids = Shift.objects.filter(start_time__lte=now_time, end_time__gte=now_time).values_list('driver_id', flat=True).distinct()
+        on_duty_driver_ids = shifts_qs.filter(start_time__lte=now_time, end_time__gte=now_time).values_list('driver_id', flat=True).distinct()
         on_duty_count = len(on_duty_driver_ids)
         off_duty_count = max(0, total_drivers - on_duty_count)
 
         active_drivers_list = []
-        drivers = Driver.objects.all().select_related('user')
+        drivers = drivers_qs.select_related('user')
         for d in drivers:
             active_assignment = d.assignments.filter(end_time__isnull=True).first()
             assigned_amb_number = active_assignment.ambulance.ambulance_number if active_assignment and active_assignment.ambulance else None
@@ -1559,11 +1668,24 @@ class AdministratorDashboardView(APIView):
             )
 
         # 1. Response Time Metrics
-        logs = AmbulanceLifecycleLog.objects.filter(to_status='AT_INCIDENT', mission__isnull=False).select_related('mission__emergency_request')
+        user = request.user
+        if user.is_superuser and not user.hospital:
+            lifecycle_logs_qs = AmbulanceLifecycleLog.objects.all()
+            missions_qs = Mission.objects.all()
+            trips_qs = Trip.objects.all()
+            ambulances_qs = Ambulance.objects.all()
+        else:
+            hospital = get_user_hospital(user)
+            lifecycle_logs_qs = AmbulanceLifecycleLog.objects.filter(ambulance__hospital=hospital)
+            missions_qs = Mission.objects.filter(ambulance__hospital=hospital)
+            trips_qs = Trip.objects.filter(ambulance__hospital=hospital)
+            ambulances_qs = Ambulance.objects.filter(hospital=hospital)
+
+        logs = lifecycle_logs_qs.filter(to_status='AT_INCIDENT', mission__isnull=False).select_related('mission__emergency_request')
         durations = []
         by_priority_lists = {'LOW': [], 'MEDIUM': [], 'HIGH': [], 'CRITICAL': []}
         daily_trend_lists = {}
-
+ 
         for log in logs:
             req = log.mission.emergency_request
             if req and req.created_at:
@@ -1577,13 +1699,13 @@ class AdministratorDashboardView(APIView):
                     if date_str not in daily_trend_lists:
                         daily_trend_lists[date_str] = []
                     daily_trend_lists[date_str].append(dur)
-
+ 
         avg_rt = round(sum(durations) / len(durations), 1) if durations else 0.0
         by_priority = {
             p: round(sum(vals) / len(vals), 1) if vals else 0.0
             for p, vals in by_priority_lists.items()
         }
-
+ 
         daily_trends = []
         for date_str in sorted(daily_trend_lists.keys())[-30:]:
             vals = daily_trend_lists[date_str]
@@ -1591,28 +1713,28 @@ class AdministratorDashboardView(APIView):
                 "date": date_str,
                 "avg_response_time_minutes": round(sum(vals) / len(vals), 1)
             })
-
+ 
         response_time_metrics = {
             "average_response_time_minutes": avg_rt,
             "by_priority": by_priority,
             "daily_trends": daily_trends
         }
-
+ 
         # 2. Mission Statistics
-        total_missions = Mission.objects.count()
-        completed_missions = Mission.objects.filter(status='COMPLETED').count()
-        cancelled_missions = Mission.objects.filter(status='CANCELLED').count()
+        total_missions = missions_qs.count()
+        completed_missions = missions_qs.filter(status='COMPLETED').count()
+        cancelled_missions = missions_qs.filter(status='CANCELLED').count()
         terminal_missions = completed_missions + cancelled_missions
         success_rate = round((completed_missions / terminal_missions * 100), 1) if terminal_missions > 0 else 0.0
-
-        trips = Trip.objects.filter(status='COMPLETED', start_time__isnull=False, end_time__isnull=False)
+ 
+        trips = trips_qs.filter(status='COMPLETED', start_time__isnull=False, end_time__isnull=False)
         trip_durations = [(t.end_time - t.start_time).total_seconds() / 60.0 for t in trips]
         avg_duration = round(sum(trip_durations) / len(trip_durations), 1) if trip_durations else 0.0
-
-        completed_trips = Trip.objects.filter(status='COMPLETED')
+ 
+        completed_trips = trips_qs.filter(status='COMPLETED')
         trip_distances = [t.distance_km for t in completed_trips]
         avg_distance = round(sum(trip_distances) / len(trip_distances), 1) if trip_distances else 0.0
-
+ 
         mission_statistics = {
             "total_missions": total_missions,
             "completed_missions": completed_missions,
@@ -1621,33 +1743,33 @@ class AdministratorDashboardView(APIView):
             "average_trip_duration_minutes": avg_duration,
             "average_trip_distance_km": avg_distance
         }
-
+ 
         # 3. Fleet Utilization
-        total_active_ambulances = Ambulance.objects.filter(status='ACTIVE').count()
-        active_deployed = Ambulance.objects.filter(status='ACTIVE').exclude(lifecycle_status='AVAILABLE').count()
+        total_active_ambulances = ambulances_qs.filter(status='ACTIVE').count()
+        active_deployed = ambulances_qs.filter(status='ACTIVE').exclude(lifecycle_status='AVAILABLE').count()
         active_utilization_rate = round((active_deployed / total_active_ambulances * 100), 1) if total_active_ambulances > 0 else 0.0
-
+ 
         total_seconds = 0
         now_time = timezone.now()
-        for trip in Trip.objects.all():
+        for trip in trips_qs.all():
             start = trip.start_time
             end = trip.end_time or now_time
             if start:
                 total_seconds += (end - start).total_seconds()
         total_trip_hours = round(total_seconds / 3600.0, 1)
-
+ 
         fleet_utilization = {
             "active_utilization_rate": active_utilization_rate,
             "total_trip_hours": total_trip_hours
         }
-
+ 
         # 4. Operational Performance
         # Key lifecycle phase durations
         from collections import defaultdict
         mission_logs = defaultdict(list)
-        for log in AmbulanceLifecycleLog.objects.filter(mission__isnull=False).order_by('changed_at'):
+        for log in lifecycle_logs_qs.filter(mission__isnull=False).order_by('changed_at'):
             mission_logs[log.mission_id].append(log)
-
+ 
         phase_durations = defaultdict(list)
         for m_id, m_logs in mission_logs.items():
             for i in range(len(m_logs) - 1):
@@ -1658,25 +1780,25 @@ class AdministratorDashboardView(APIView):
                     dur = (end_t - start_t).total_seconds() / 60.0
                     if dur >= 0:
                         phase_durations[phase].append(dur)
-
+ 
         avg_phase_durations = {
             phase: round(sum(phase_durations[phase]) / len(phase_durations[phase]), 1) if phase_durations[phase] else 0.0
             for phase in ['EN_ROUTE', 'AT_INCIDENT', 'PATIENT_ONBOARD', 'HOSPITAL_ARRIVAL', 'SANITIZATION']
         }
-
+ 
         # Daily mission volume counts (last 30 days)
         daily_volume_counts = {}
-        for m in Mission.objects.all():
+        for m in missions_qs.all():
             date_str = m.created_at.date().isoformat()
             daily_volume_counts[date_str] = daily_volume_counts.get(date_str, 0) + 1
-
+ 
         daily_mission_volume = []
         for date_str in sorted(daily_volume_counts.keys())[-30:]:
             daily_mission_volume.append({
                 "date": date_str,
                 "missions_count": daily_volume_counts[date_str]
             })
-
+ 
         operational_performance = {
             "average_phase_durations_minutes": avg_phase_durations,
             "daily_mission_volume": daily_mission_volume
