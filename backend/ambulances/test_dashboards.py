@@ -133,7 +133,7 @@ class AmbulanceDashboardAPITests(APITestCase):
     def test_dispatcher_dashboard_populated(self):
         # Create some data
         req = EmergencyRequest.objects.create(
-            requester_name="John Doe", contact_number="12345", emergency_type="Heart",
+            requester_name="John Doe", contact_number="1234567890", emergency_type="Heart",
             priority="CRITICAL", pickup_location="Location A", latitude=21.8206, longitude=75.6094,
             status="PENDING", created_by=self.dispatcher_user
         )
@@ -145,7 +145,7 @@ class AmbulanceDashboardAPITests(APITestCase):
         DriverAssignment.objects.create(driver=drv, ambulance=amb)
 
         req_assigned = EmergencyRequest.objects.create(
-            requester_name="Jane Smith", contact_number="54321", emergency_type="Injury",
+            requester_name="Jane Smith", contact_number="5432109876", emergency_type="Injury",
             priority="HIGH", pickup_location="Location B", latitude=21.8206, longitude=75.6094,
             status="ASSIGNED", created_by=self.dispatcher_user
         )
@@ -216,7 +216,7 @@ class AmbulanceDashboardAPITests(APITestCase):
     def test_admin_dashboard_populated(self):
         # Create emergency request, mission and logs
         req = EmergencyRequest.objects.create(
-            requester_name="Alex", contact_number="123", emergency_type="Accident",
+            requester_name="Alex", contact_number="7778889999", emergency_type="Accident",
             priority="CRITICAL", pickup_location="Loc", latitude=21.8206, longitude=75.6094,
             status="IN_PROGRESS"
         )

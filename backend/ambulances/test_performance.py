@@ -66,7 +66,7 @@ class PerformanceBenchmarkingTests(APITestCase):
         for i in range(5):
             req = EmergencyRequest.objects.create(
                 requester_name=f'Patient {i}',
-                contact_number=f'555-900{i}',
+                contact_number=f'555-900-000{i}',
                 emergency_type="Respiratory Arrest",
                 priority="HIGH",
                 pickup_location=f'Location {i}',

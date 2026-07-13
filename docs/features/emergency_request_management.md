@@ -56,6 +56,7 @@ The backend exposes the following endpoints (see `docs/api/emergency-request-api
 
 ### Input Validation & Business Rules
 - **Fields Requirement**: `requester_name`, `contact_number`, `emergency_type`, `pickup_location`, `latitude`, and `longitude` are required.
+- **Contact Number**: Must be a valid 10-digit number (containing exactly 10 numeric digits, digits only, or with standard separators like dashes/parentheses as long as they contain exactly 10 numeric digits).
 - **Latitude / Longitude**: Must be valid decimal coordinates (Latitude: -90 to 90, Longitude: -180 to 180).
 - **Status Constraints**:
   - Valid statuses: `PENDING`, `ASSIGNED`, `IN_PROGRESS`, `COMPLETED`, `CANCELLED`.

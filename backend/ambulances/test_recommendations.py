@@ -76,7 +76,7 @@ class AmbulanceRecommendationAPITests(APITestCase):
         DriverAssignment.objects.create(driver=self.driver_busy, ambulance=self.amb_busy)
 
         self.req_busy = EmergencyRequest.objects.create(
-            requester_name="John Busy", contact_number="555-5555", emergency_type="General",
+            requester_name="John Busy", contact_number="555-555-5555", emergency_type="General",
             priority="MEDIUM", pickup_location="Close", latitude=40.7128, longitude=-73.9960,
             status="ASSIGNED", created_by=self.dispatcher_user
         )

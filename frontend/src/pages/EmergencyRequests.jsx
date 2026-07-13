@@ -118,6 +118,19 @@ const EmergencyRequests = () => {
       return;
     }
 
+    const contactRegex = /^[\d\s\-\(\)\+]+$/;
+    if (!contactRegex.test(contactNumber)) {
+      setSubmitError('Contact number contains invalid characters.');
+      setSubmitting(false);
+      return;
+    }
+    const cleanedContact = contactNumber.replace(/\D/g, '');
+    if (cleanedContact.length !== 10) {
+      setSubmitError('Contact number must contain exactly 10 digits.');
+      setSubmitting(false);
+      return;
+    }
+
     const payload = {
       requester_name: requesterName,
       contact_number: contactNumber,

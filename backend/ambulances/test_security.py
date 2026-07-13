@@ -84,7 +84,7 @@ class SecurityValidationTests(APITestCase):
         # 1. Test out-of-range coordinates
         bad_data_1 = {
             "requester_name": "Test Patient",
-            "contact_number": "555",
+            "contact_number": "555-010-0100",
             "emergency_type": "Injury",
             "pickup_location": "Out of Bounds",
             "latitude": 95.0,  # Max valid latitude is 90
@@ -96,7 +96,7 @@ class SecurityValidationTests(APITestCase):
 
         bad_data_2 = {
             "requester_name": "Test Patient",
-            "contact_number": "555",
+            "contact_number": "555-010-0100",
             "emergency_type": "Injury",
             "pickup_location": "Out of Bounds",
             "latitude": 37.0,
@@ -109,7 +109,7 @@ class SecurityValidationTests(APITestCase):
         # 2. Test script tags / script injection payload (XSS)
         script_payload = {
             "requester_name": "<script>alert('xss')</script>",
-            "contact_number": "555-1234",
+            "contact_number": "555-010-1234",
             "emergency_type": "Trauma",
             "pickup_location": "Downtown Base",
             "latitude": 37.77,
@@ -127,7 +127,7 @@ class SecurityValidationTests(APITestCase):
         
         sqli_data = {
             "requester_name": "John' OR '1'='1' --",
-            "contact_number": "555",
+            "contact_number": "555-010-0100",
             "emergency_type": "Heart Issues",
             "pickup_location": "Loc",
             "latitude": 20.0,

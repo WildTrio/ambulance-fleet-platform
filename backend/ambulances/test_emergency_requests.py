@@ -29,7 +29,7 @@ class EmergencyRequestAPITests(APITestCase):
         url = reverse('emergency-request-list')
         data = {
             "requester_name": "Citizen One",
-            "contact_number": "555-0101",
+            "contact_number": "555-010-0101",
             "emergency_type": "Stroke",
             "pickup_location": "456 Oak Rd",
             "latitude": 34.0522,
@@ -51,7 +51,7 @@ class EmergencyRequestAPITests(APITestCase):
         url = reverse('emergency-request-list')
         data = {
             "requester_name": "Jane Smith",
-            "contact_number": "555-0102",
+            "contact_number": "555-010-0102",
             "emergency_type": "Cardiac Arrest",
             "pickup_location": "123 Elm St",
             "latitude": 34.0522,
@@ -73,7 +73,7 @@ class EmergencyRequestAPITests(APITestCase):
         url = reverse('emergency-request-list')
         data = {
             "requester_name": "John Admin-Logged",
-            "contact_number": "555-0103",
+            "contact_number": "555-010-0103",
             "emergency_type": "Trauma/Bleeding",
             "pickup_location": "789 Pine St",
             "latitude": 34.0522,
@@ -111,11 +111,11 @@ class EmergencyRequestAPITests(APITestCase):
     def test_list_emergency_requests_rbac(self):
         # Create some requests
         req1 = EmergencyRequest.objects.create(
-            requester_name="Req 1", contact_number="1", emergency_type="A",
+            requester_name="Req 1", contact_number="123-456-7890", emergency_type="A",
             pickup_location="Loc 1", latitude=0, longitude=0, created_by=self.citizen_1
         )
         req2 = EmergencyRequest.objects.create(
-            requester_name="Req 2", contact_number="2", emergency_type="B",
+            requester_name="Req 2", contact_number="098-765-4321", emergency_type="B",
             pickup_location="Loc 2", latitude=0, longitude=0, created_by=self.citizen_2
         )
 
@@ -153,19 +153,19 @@ class EmergencyRequestAPITests(APITestCase):
     def test_priority_and_date_sorting_for_queue(self):
         # Create multiple requests with different priorities and dates
         req_med = EmergencyRequest.objects.create(
-            requester_name="Med", contact_number="1", emergency_type="A",
+            requester_name="Med", contact_number="1234567890", emergency_type="A",
             pickup_location="Loc", latitude=0, longitude=0, priority="MEDIUM", created_by=self.citizen_1
         )
         req_crit_old = EmergencyRequest.objects.create(
-            requester_name="Crit Old", contact_number="2", emergency_type="B",
+            requester_name="Crit Old", contact_number="1234567891", emergency_type="B",
             pickup_location="Loc", latitude=0, longitude=0, priority="CRITICAL", created_by=self.citizen_1
         )
         req_high = EmergencyRequest.objects.create(
-            requester_name="High", contact_number="3", emergency_type="C",
+            requester_name="High", contact_number="1234567892", emergency_type="C",
             pickup_location="Loc", latitude=0, longitude=0, priority="HIGH", created_by=self.citizen_2
         )
         req_crit_new = EmergencyRequest.objects.create(
-            requester_name="Crit New", contact_number="4", emergency_type="D",
+            requester_name="Crit New", contact_number="1234567893", emergency_type="D",
             pickup_location="Loc", latitude=0, longitude=0, priority="CRITICAL", created_by=self.citizen_2
         )
 
@@ -183,7 +183,7 @@ class EmergencyRequestAPITests(APITestCase):
 
     def test_update_emergency_request_citizen_flow(self):
         req = EmergencyRequest.objects.create(
-            requester_name="Citizen One", contact_number="123", emergency_type="Trauma",
+            requester_name="Citizen One", contact_number="123-456-7890", emergency_type="Trauma",
             pickup_location="Original St", latitude=12.0, longitude=13.0, status="PENDING", created_by=self.citizen_1
         )
 
@@ -212,7 +212,7 @@ class EmergencyRequestAPITests(APITestCase):
     def test_update_details_blocked_for_citizen_when_assigned(self):
         # Create assigned request
         req = EmergencyRequest.objects.create(
-            requester_name="Citizen One", contact_number="123", emergency_type="Trauma",
+            requester_name="Citizen One", contact_number="123-456-7890", emergency_type="Trauma",
             pickup_location="Original St", latitude=12.0, longitude=13.0, status="ASSIGNED", created_by=self.citizen_1
         )
 
@@ -233,7 +233,7 @@ class EmergencyRequestAPITests(APITestCase):
 
     def test_modification_disabled_after_completed_or_cancelled(self):
         req_comp = EmergencyRequest.objects.create(
-            requester_name="Jane", contact_number="1", emergency_type="A",
+            requester_name="Jane", contact_number="123-456-7890", emergency_type="A",
             pickup_location="Loc", latitude=0, longitude=0, status="COMPLETED", created_by=self.citizen_1
         )
         url_comp = reverse('emergency-request-detail', kwargs={'pk': req_comp.pk})
@@ -247,7 +247,7 @@ class EmergencyRequestAPITests(APITestCase):
 
     def test_delete_emergency_request_method_not_allowed(self):
         req = EmergencyRequest.objects.create(
-            requester_name="Jane", contact_number="1", emergency_type="A",
+            requester_name="Jane", contact_number="123-456-7890", emergency_type="A",
             pickup_location="Loc", latitude=0, longitude=0, status="PENDING", created_by=self.citizen_1
         )
         url = reverse('emergency-request-detail', kwargs={'pk': req.pk})
@@ -256,3 +256,30 @@ class EmergencyRequestAPITests(APITestCase):
         self.client.force_authenticate(user=self.admin_user)
         response = self.client.delete(url)
         self.assertEqual(response.status_code, status.HTTP_405_METHOD_NOT_ALLOWED)
+
+    def test_contact_number_validation(self):
+        url = reverse('emergency-request-list')
+        
+        # Test 6 digits - invalid (too short)
+        data = {
+            "requester_name": "Citizen One",
+            "contact_number": "123456",
+            "emergency_type": "Stroke",
+            "pickup_location": "456 Oak Rd",
+            "latitude": 34.0522,
+            "longitude": -118.2437
+        }
+        self.client.force_authenticate(user=self.citizen_1)
+        response = self.client.post(url, data, format='json')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("contact_number", response.data)
+        
+        # Test invalid characters - invalid
+        data["contact_number"] = "123-456-abc0"
+        response = self.client.post(url, data, format='json')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        
+        # Test valid 10 digits with special characters - valid
+        data["contact_number"] = "(123) 456-7890"
+        response = self.client.post(url, data, format='json')
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)

@@ -297,6 +297,17 @@ class EmergencyRequestSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Longitude must be between -180 and 180.")
         return value
 
+    def validate_contact_number(self, value):
+        import re
+        if not value:
+            raise serializers.ValidationError("Contact number is required.")
+        if not re.match(r'^[\d\s\-\(\)\+]+$', value):
+            raise serializers.ValidationError("Contact number contains invalid characters.")
+        cleaned = re.sub(r'\D', '', value)
+        if len(cleaned) != 10:
+            raise serializers.ValidationError("Contact number must contain exactly 10 digits.")
+        return value
+
 
 class MissionSerializer(serializers.ModelSerializer):
     emergency_request_id = serializers.UUIDField(write_only=True, required=False)

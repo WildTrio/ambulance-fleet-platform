@@ -479,7 +479,7 @@ class DriverManagementAPITests(APITestCase):
         citizen_role = Role.objects.get_or_create(name='EMERGENCY_REQUESTOR')[0]
         citizen_user = User.objects.create_user(email='citizen_test@g.com', name='Citizen', password='Password123!', role=citizen_role)
         req = EmergencyRequest.objects.create(
-            requester_name="Patient A", contact_number="555-9999", emergency_type="Stroke",
+            requester_name="Patient A", contact_number="555-999-9999", emergency_type="Stroke",
             priority="CRITICAL", pickup_location="789 Market St", latitude=40.7, longitude=-74.0,
             status="ASSIGNED", created_by=citizen_user
         )
@@ -664,12 +664,12 @@ class DispatchConsoleMissionTests(APITestCase):
 
         # Emergency Requests
         self.req1 = EmergencyRequest.objects.create(
-            requester_name="Patient A", contact_number="555-9999", emergency_type="Stroke",
+            requester_name="Patient A", contact_number="555-999-9999", emergency_type="Stroke",
             priority="CRITICAL", pickup_location="789 Market St", latitude=37.774900, longitude=-122.419400,
             status="PENDING", created_by=self.citizen_user
         )
         self.req2 = EmergencyRequest.objects.create(
-            requester_name="Patient B", contact_number="555-8888", emergency_type="Trauma",
+            requester_name="Patient B", contact_number="555-888-8888", emergency_type="Trauma",
             priority="HIGH", pickup_location="456 Mission St", latitude=37.778000, longitude=-122.422000,
             status="PENDING", created_by=self.citizen_user
         )
@@ -1117,7 +1117,7 @@ class DigitalTripManagementTests(APITestCase):
         # Create EmergencyRequest (incident location: 40.7300, -73.9800)
         self.req = EmergencyRequest.objects.create(
             requester_name="John Requestor",
-            contact_number="555-0100",
+            contact_number="555-010-0100",
             emergency_type="Cardiac Arrest",
             priority="CRITICAL",
             pickup_location="Times Square",
@@ -1283,7 +1283,7 @@ class GPSTrackingTests(APITestCase):
 
         # Emergency Request
         self.req = EmergencyRequest.objects.create(
-            requester_name="John Requestor", contact_number="555-0100", emergency_type="Cardiac Arrest",
+            requester_name="John Requestor", contact_number="555-010-0100", emergency_type="Cardiac Arrest",
             priority="CRITICAL", pickup_location="Times Square", latitude=40.7300, longitude=-73.9800,
             status='PENDING', created_by=self.disp_user
         )

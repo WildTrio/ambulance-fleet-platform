@@ -36,7 +36,7 @@ class NotificationTests(APITestCase):
         # 1. Dispatcher logs new emergency request
         self.client.force_authenticate(user=self.disp_user)
         req = EmergencyRequest.objects.create(
-            requester_name="Jane Doe", contact_number="555-0300", emergency_type="Stroke",
+            requester_name="Jane Doe", contact_number="555-030-0300", emergency_type="Stroke",
             priority="CRITICAL", pickup_location="Central Park", latitude=40.7850, longitude=-73.9680,
             status='PENDING', created_by=self.disp_user
         )
@@ -52,7 +52,7 @@ class NotificationTests(APITestCase):
     def test_dispatch_mission_creates_notifications(self):
         # Setup emergency request
         req = EmergencyRequest.objects.create(
-            requester_name="Jane Doe", contact_number="555-0300", emergency_type="Stroke",
+            requester_name="Jane Doe", contact_number="555-030-0300", emergency_type="Stroke",
             priority="CRITICAL", pickup_location="Central Park", latitude=40.7850, longitude=-73.9680,
             status='PENDING', created_by=self.disp_user
         )
@@ -81,7 +81,7 @@ class NotificationTests(APITestCase):
     def test_mission_started_notifies_dispatcher_and_requester(self):
         # Create mission
         req = EmergencyRequest.objects.create(
-            requester_name="Jane Doe", contact_number="555-0300", emergency_type="Stroke",
+            requester_name="Jane Doe", contact_number="555-030-0300", emergency_type="Stroke",
             priority="CRITICAL", pickup_location="Central Park", latitude=40.7850, longitude=-73.9680,
             status='PENDING', created_by=self.disp_user
         )
@@ -101,7 +101,7 @@ class NotificationTests(APITestCase):
         # Create request created 5 minutes ago (lte 3 minutes ago)
         old_time = timezone.now() - timedelta(minutes=5)
         req = EmergencyRequest.objects.create(
-            requester_name="Jane Doe", contact_number="555-0300", emergency_type="Stroke",
+            requester_name="Jane Doe", contact_number="555-030-0300", emergency_type="Stroke",
             priority="CRITICAL", pickup_location="Central Park", latitude=40.7850, longitude=-73.9680,
             status='PENDING', created_by=self.disp_user
         )
