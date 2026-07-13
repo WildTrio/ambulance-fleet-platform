@@ -1,4 +1,4 @@
-# Feature Specification: Notification Management (Phase 10)
+.md# Feature Specification: Notification Management (Phase 10)
 
 ## Objective
 Develop an event-driven notification system to keep dispatchers, admins, fleet managers, and drivers informed of operational milestones. Support in-app, email, SMS, and push notification channels.

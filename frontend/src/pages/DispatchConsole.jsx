@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import api from '../services/api';
 import './DispatchConsole.css';
 import { useAuth } from '../context/AuthContext';
+import toast from 'react-hot-toast';
 
 const DispatchConsole = () => {
   const { user } = useAuth();
@@ -165,6 +166,7 @@ const DispatchConsole = () => {
     try {
       await api.post('/missions/', payload);
       setDispatchSuccess(`Successfully dispatched ${selectedAmbulance.ambulance_number}!`);
+      toast.success(`Successfully dispatched ${selectedAmbulance.ambulance_number}!`);
       
       // Refresh console lists
       fetchActiveRequests();
@@ -179,6 +181,7 @@ const DispatchConsole = () => {
       console.error("Dispatch error:", err);
       const msg = err.response?.data?.detail || err.response?.data?.ambulance_id?.[0] || err.response?.data?.driver_id?.[0] || "Failed to dispatch mission.";
       setDispatchError(msg);
+      toast.error(msg);
     } finally {
       setSubmittingDispatch(false);
     }
@@ -194,7 +197,8 @@ const DispatchConsole = () => {
     try {
       await api.post(`/ambulances/${selectedAmbulance.id}/assign-driver/`, { driver_id: driverId });
       setDispatchSuccess(`Driver assigned to ${selectedAmbulance.ambulance_number} successfully!`);
-
+      toast.success(`Driver assigned to ${selectedAmbulance.ambulance_number} successfully!`);
+      
       // Update selected driver ID state
       setSelectedDriverId(driverId);
 
@@ -232,6 +236,7 @@ const DispatchConsole = () => {
       console.error("Failed to assign driver:", err);
       const msg = err.response?.data?.non_field_errors?.[0] || err.response?.data?.detail || "Failed to assign driver.";
       setDispatchError(msg);
+      toast.error(msg);
       // Reset dropdown value
       setSelectedDriverId('');
     }
@@ -241,11 +246,12 @@ const DispatchConsole = () => {
   const handleTransitionMission = async (missionId, nextStatus) => {
     try {
       await api.patch(`/missions/${missionId}/`, { status: nextStatus });
+      toast.success(`Mission status updated to ${nextStatus.replace('_', ' ')}`);
       fetchActiveMissions();
       fetchActiveRequests();
     } catch (err) {
       console.error("Mission status update failed:", err);
-      alert(err.response?.data?.detail || "Failed to update mission status.");
+      toast.error(err.response?.data?.detail || "Failed to update mission status.");
     }
   };
 

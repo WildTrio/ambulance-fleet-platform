@@ -332,7 +332,11 @@ class Mission(models.Model):
 
     def calculate_trip_distance(self, last_status):
         import math
-        
+        import urllib.request
+        import json
+        from django.conf import settings
+        from django.utils import timezone
+
         def haversine(lat1, lon1, lat2, lon2):
             if lat1 is None or lon1 is None or lat2 is None or lon2 is None:
                 return 0.0
@@ -350,18 +354,27 @@ class Mission(models.Model):
             except Exception:
                 return 0.0
 
-        # Segment 1: Station coordinates to Incident coordinates
+        # 1. Telemetry GPS Logs Integration: If there are logged GPS coordinates for this trip,
+        # sum the actual distance recorded from coordinate to coordinate.
+        trip = getattr(self, 'trip', None)
+        if trip:
+            logs = list(trip.gps_logs.all().order_by('recorded_at'))
+            if len(logs) >= 2:
+                actual_gps_dist = 0.0
+                for i in range(len(logs) - 1):
+                    actual_gps_dist += haversine(
+                        logs[i].latitude, logs[i].longitude,
+                        logs[i+1].latitude, logs[i+1].longitude
+                    )
+                return round(actual_gps_dist, 2)
+
+        # 2. GraphHopper Routing API Integration
         station_lat = self.ambulance.station.latitude if (self.ambulance and self.ambulance.station) else None
         station_lon = self.ambulance.station.longitude if (self.ambulance and self.ambulance.station) else None
         incident_lat = self.emergency_request.latitude if self.emergency_request else None
         incident_lon = self.emergency_request.longitude if self.emergency_request else None
 
-        dist1 = haversine(station_lat, station_lon, incident_lat, incident_lon)
-
-        # Segment 2: Incident coordinates to Hospital coordinates
         dest_hospital = self.ambulance.hospital if self.ambulance else None
-        
-        # Get coordinates of any station associated with the destination hospital
         dest_lat = None
         dest_lon = None
         if dest_hospital:
@@ -369,24 +382,52 @@ class Mission(models.Model):
             if first_station:
                 dest_lat = first_station.latitude
                 dest_lon = first_station.longitude
-        
-        # Fallback to home station if no station for hospital found
+
         if dest_lat is None or dest_lon is None:
             dest_lat = station_lat
             dest_lon = station_lon
 
-        dist2 = haversine(incident_lat, incident_lon, dest_lat, dest_lon)
-
-        # Calculate based on when/where the mission ends/cancels
+        # Build path coordinates based on when/where the mission ends or cancels
+        points = []
         if self.status == 'CANCELLED':
             if last_status == 'ASSIGNED':
                 return 0.0
             elif last_status in ['EN_ROUTE', 'AT_INCIDENT']:
-                return round(dist1, 2)
+                if station_lat and incident_lat:
+                    points = [(station_lat, station_lon), (incident_lat, incident_lon)]
             else:  # PATIENT_ONBOARD, HOSPITAL_ARRIVAL, SANITIZATION
-                return round(dist1 + dist2, 2)
+                if station_lat and incident_lat and dest_lat:
+                    points = [(station_lat, station_lon), (incident_lat, incident_lon), (dest_lat, dest_lon)]
         else:  # COMPLETED
-            return round(dist1 + dist2, 2)
+            if station_lat and incident_lat and dest_lat:
+                points = [(station_lat, station_lon), (incident_lat, incident_lon), (dest_lat, dest_lon)]
+
+        # Call GraphHopper API to get road routing distance if key is configured
+        api_key = getattr(settings, 'GRAPHHOPPER_API_KEY', '')
+        if api_key and len(points) >= 2:
+            try:
+                points_query = "&".join([f"point={pt[0]},{pt[1]}" for pt in points])
+                url = f"https://graphhopper.com/api/1/route?{points_query}&profile=car&locale=en&points_encoded=false&key={api_key}"
+                req = urllib.request.Request(
+                    url,
+                    headers={'User-Agent': 'Lifeline-Dispatch/1.0'}
+                )
+                with urllib.request.urlopen(req, timeout=5) as response:
+                    data = json.loads(response.read().decode())
+                    if 'paths' in data and len(data['paths']) > 0:
+                        dist_meters = data['paths'][0].get('distance', 0.0)
+                        return round(dist_meters / 1000.0, 2)
+            except Exception:
+                pass
+
+        # 3. Fallback to straight-line Haversine sum if API fails or is not configured
+        fallback_dist = 0.0
+        for i in range(len(points) - 1):
+            fallback_dist += haversine(
+                points[i][0], points[i][1],
+                points[i+1][0], points[i+1][1]
+            )
+        return round(fallback_dist, 2)
 
     def generate_trip_summary(self, trip, last_phase=None):
         duration_mins = 0

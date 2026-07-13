@@ -14,7 +14,8 @@ const api = axios.create({
 api.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem('access_token');
-    if (token) {
+    const isAuthUrl = config.url && (config.url.includes('/auth/refresh/') || config.url.includes('/auth/login/'));
+    if (token && !isAuthUrl) {
       config.headers.Authorization = `Bearer ${token}`;
     }
     return config;
@@ -45,7 +46,8 @@ api.interceptors.response.use(
     // If we receive 401 and haven't retried yet, trigger token refresh
     if (error.response?.status === 401 && !originalRequest._retry) {
       // Avoid infinite loop if refresh request itself returns 401
-      if (originalRequest.url === '/auth/refresh/' || originalRequest.url === '/auth/login/') {
+      const isAuthUrl = originalRequest.url && (originalRequest.url.includes('/auth/refresh/') || originalRequest.url.includes('/auth/login/'));
+      if (isAuthUrl) {
         return Promise.reject(error);
       }
 

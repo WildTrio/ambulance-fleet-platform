@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import api from '../services/api';
 import './DriverConsole.css';
+import toast from 'react-hot-toast';
 
 const DriverConsole = () => {
   const [ambulance, setAmbulance] = useState(null);
@@ -72,6 +73,7 @@ const DriverConsole = () => {
         remarks: remarks || `Transitioned to ${targetStatus} by driver.`
       });
       setSuccessMsg(`Successfully transitioned to ${targetStatus}`);
+      toast.success(`Successfully transitioned to ${getStatusLabel(targetStatus)}`);
       setRemarks('');
       
       // Refresh assignment, history & trips
@@ -81,6 +83,7 @@ const DriverConsole = () => {
       console.error("Error transitioning status:", err);
       const detail = err.response?.data?.detail || "Failed to transition status.";
       setError(detail);
+      toast.error(detail);
     } finally {
       setSubmitting(false);
     }
@@ -217,7 +220,7 @@ const DriverConsole = () => {
       },
       (err) => {
         console.error("Error watching device position:", err);
-        alert("Unable to retrieve GPS coordinates from device: " + err.message);
+        toast.error("Unable to retrieve GPS coordinates from device: " + err.message);
         setUseDeviceGPS(false);
       },
       { enableHighAccuracy: true, maximumAge: 10000, timeout: 5000 }

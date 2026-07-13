@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import api from '../services/api';
 import './EmergencyRequests.css';
 import { useAuth } from '../context/AuthContext';
+import toast from 'react-hot-toast';
 
 const EmergencyRequests = () => {
   const { user } = useAuth();
@@ -133,6 +134,7 @@ const EmergencyRequests = () => {
     try {
       await api.post('/emergency-requests/', payload);
       setSubmitSuccess('Emergency request registered successfully!');
+      toast.success('Emergency request registered successfully!');
       // Reset form
       setRequesterName('');
       setContactNumber('');
@@ -166,30 +168,33 @@ const EmergencyRequests = () => {
     if (!window.confirm('Are you sure you want to cancel this emergency request?')) return;
     try {
       await api.patch(`/emergency-requests/${id}/`, { status: 'CANCELLED' });
+      toast.success('Request cancelled successfully.');
       fetchRequests();
     } catch (err) {
       console.error(err);
-      alert(err.response?.data?.detail || 'Failed to cancel the request.');
+      toast.error(err.response?.data?.detail || 'Failed to cancel the request.');
     }
   };
 
   const handleUpdateStatus = async (id, newStatus) => {
     try {
       await api.patch(`/emergency-requests/${id}/`, { status: newStatus });
+      toast.success(`Status updated to ${newStatus.replace('_', ' ')}`);
       fetchRequests();
     } catch (err) {
       console.error(err);
-      alert(err.response?.data?.detail || 'Failed to update status.');
+      toast.error(err.response?.data?.detail || 'Failed to update status.');
     }
   };
 
   const handleUpdatePriority = async (id, newPriority) => {
     try {
       await api.patch(`/emergency-requests/${id}/`, { priority: newPriority });
+      toast.success(`Priority updated to ${newPriority}`);
       fetchRequests();
     } catch (err) {
       console.error(err);
-      alert(err.response?.data?.detail || 'Failed to update priority.');
+      toast.error(err.response?.data?.detail || 'Failed to update priority.');
     }
   };
 

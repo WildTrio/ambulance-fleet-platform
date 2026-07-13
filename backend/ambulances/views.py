@@ -1408,4 +1408,287 @@ class TripViewSet(viewsets.ReadOnlyModelViewSet):
         return Response(serializer.data, status=status.HTTP_200_OK)
 
 
+from rest_framework.views import APIView
+from django.db.models import Q
+
+class DispatcherDashboardView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        user_role = request.user.role.name if request.user.role else None
+        if user_role not in ['HOSPITAL_ADMINISTRATOR', 'DISPATCHER'] and not request.user.is_superuser:
+            return Response(
+                {"detail": "You do not have permission to view the Dispatcher Dashboard."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        # 1. Pending Requests
+        pending_requests = EmergencyRequest.objects.filter(status='PENDING').order_by('created_at')
+        pending_requests_serialized = EmergencyRequestSerializer(pending_requests, many=True, context={'request': request}).data
+
+        # 2. Active Missions
+        active_missions = Mission.objects.exclude(status__in=['COMPLETED', 'CANCELLED']).order_by('-created_at')
+        active_missions_serialized = MissionSerializer(active_missions, many=True, context={'request': request}).data
+
+        # 3. Available Ambulances
+        available_ambulances = Ambulance.objects.filter(status='ACTIVE', lifecycle_status='AVAILABLE').order_by('ambulance_number')
+        available_ambulances_serialized = AmbulanceSerializer(available_ambulances, many=True, context={'request': request}).data
+
+        return Response({
+            "pending_requests_count": len(pending_requests_serialized),
+            "pending_requests": pending_requests_serialized,
+            "active_missions_count": len(active_missions_serialized),
+            "active_missions": active_missions_serialized,
+            "available_ambulances_count": len(available_ambulances_serialized),
+            "available_ambulances": available_ambulances_serialized
+        }, status=status.HTTP_200_OK)
+
+
+class FleetDashboardView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        user_role = request.user.role.name if request.user.role else None
+        if user_role not in ['HOSPITAL_ADMINISTRATOR', 'FLEET_MANAGER'] and not request.user.is_superuser:
+            return Response(
+                {"detail": "You do not have permission to view the Fleet Dashboard."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        # 1. Fleet summary
+        total_ambulances = Ambulance.objects.count()
+        
+        active_count = Ambulance.objects.filter(status='ACTIVE').count()
+        maintenance_count = Ambulance.objects.filter(status='MAINTENANCE').count()
+        inactive_count = Ambulance.objects.filter(status='INACTIVE').count()
+        
+        lifecycle_counts = {}
+        for choice in Ambulance.LIFECYCLE_STATUS_CHOICES:
+            lifecycle_counts[choice[0]] = Ambulance.objects.filter(lifecycle_status=choice[0]).count()
+            
+        available_active_count = Ambulance.objects.filter(status='ACTIVE', lifecycle_status='AVAILABLE').count()
+        availability_rate = round((available_active_count / active_count * 100), 1) if active_count > 0 else 0.0
+
+        fleet_summary = {
+            "total_ambulances": total_ambulances,
+            "by_status": {
+                "ACTIVE": active_count,
+                "MAINTENANCE": maintenance_count,
+                "INACTIVE": inactive_count
+            },
+            "by_lifecycle": lifecycle_counts,
+            "availability_rate": availability_rate
+        }
+
+        # 2. Maintenance Status (Ambulances in MAINTENANCE admin status or SANITIZATION lifecycle status)
+        maintenance_ambulances = Ambulance.objects.filter(
+            Q(status='MAINTENANCE') | Q(lifecycle_status='SANITIZATION')
+        ).distinct()
+
+        maintenance_list = []
+        for amb in maintenance_ambulances:
+            entered_at = None
+            remarks = ""
+            if amb.lifecycle_status == 'SANITIZATION':
+                log = AmbulanceLifecycleLog.objects.filter(ambulance=amb, to_status='SANITIZATION').order_by('-changed_at').first()
+                if log:
+                    entered_at = log.changed_at
+                    remarks = log.remarks
+            if not entered_at:
+                hist = AmbulanceOperationalHistory.objects.filter(ambulance=amb, event_type='STATUS_CHANGE', new_value='MAINTENANCE').order_by('-changed_at').first()
+                if hist:
+                    entered_at = hist.changed_at
+                    remarks = hist.remarks
+            if not entered_at:
+                entered_at = timezone.now()
+
+            maintenance_list.append({
+                "id": str(amb.id),
+                "ambulance_number": amb.ambulance_number,
+                "status": amb.status,
+                "lifecycle_status": amb.lifecycle_status,
+                "entered_at": entered_at.isoformat(),
+                "remarks": remarks or "Under maintenance / sanitization."
+            })
+
+        # 3. Driver Availability
+        total_drivers = Driver.objects.count()
+        available_drivers_count = Driver.objects.filter(availability=True).count()
+        
+        now_time = timezone.now()
+        on_duty_driver_ids = Shift.objects.filter(start_time__lte=now_time, end_time__gte=now_time).values_list('driver_id', flat=True).distinct()
+        on_duty_count = len(on_duty_driver_ids)
+        off_duty_count = max(0, total_drivers - on_duty_count)
+
+        active_drivers_list = []
+        drivers = Driver.objects.all().select_related('user')
+        for d in drivers:
+            active_assignment = d.assignments.filter(end_time__isnull=True).first()
+            assigned_amb_number = active_assignment.ambulance.ambulance_number if active_assignment and active_assignment.ambulance else None
+            
+            active_drivers_list.append({
+                "id": str(d.id),
+                "name": d.user.name,
+                "availability": d.availability,
+                "on_duty": d.id in on_duty_driver_ids,
+                "assigned_ambulance": assigned_amb_number
+            })
+
+        return Response({
+            "fleet_summary": fleet_summary,
+            "maintenance_list": maintenance_list,
+            "driver_availability": {
+                "total_drivers": total_drivers,
+                "available_drivers_count": available_drivers_count,
+                "on_duty_count": on_duty_count,
+                "off_duty_count": off_duty_count,
+                "active_drivers_list": active_drivers_list
+            }
+        }, status=status.HTTP_200_OK)
+
+
+class AdministratorDashboardView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        user_role = request.user.role.name if request.user.role else None
+        if user_role != 'HOSPITAL_ADMINISTRATOR' and not request.user.is_superuser:
+            return Response(
+                {"detail": "You do not have permission to view the Administrator Dashboard."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        # 1. Response Time Metrics
+        logs = AmbulanceLifecycleLog.objects.filter(to_status='AT_INCIDENT', mission__isnull=False).select_related('mission__emergency_request')
+        durations = []
+        by_priority_lists = {'LOW': [], 'MEDIUM': [], 'HIGH': [], 'CRITICAL': []}
+        daily_trend_lists = {}
+
+        for log in logs:
+            req = log.mission.emergency_request
+            if req and req.created_at:
+                dur = (log.changed_at - req.created_at).total_seconds() / 60.0
+                if dur >= 0:
+                    durations.append(dur)
+                    if req.priority in by_priority_lists:
+                        by_priority_lists[req.priority].append(dur)
+                    
+                    date_str = req.created_at.date().isoformat()
+                    if date_str not in daily_trend_lists:
+                        daily_trend_lists[date_str] = []
+                    daily_trend_lists[date_str].append(dur)
+
+        avg_rt = round(sum(durations) / len(durations), 1) if durations else 0.0
+        by_priority = {
+            p: round(sum(vals) / len(vals), 1) if vals else 0.0
+            for p, vals in by_priority_lists.items()
+        }
+
+        daily_trends = []
+        for date_str in sorted(daily_trend_lists.keys())[-30:]:
+            vals = daily_trend_lists[date_str]
+            daily_trends.append({
+                "date": date_str,
+                "avg_response_time_minutes": round(sum(vals) / len(vals), 1)
+            })
+
+        response_time_metrics = {
+            "average_response_time_minutes": avg_rt,
+            "by_priority": by_priority,
+            "daily_trends": daily_trends
+        }
+
+        # 2. Mission Statistics
+        total_missions = Mission.objects.count()
+        completed_missions = Mission.objects.filter(status='COMPLETED').count()
+        cancelled_missions = Mission.objects.filter(status='CANCELLED').count()
+        terminal_missions = completed_missions + cancelled_missions
+        success_rate = round((completed_missions / terminal_missions * 100), 1) if terminal_missions > 0 else 0.0
+
+        trips = Trip.objects.filter(status='COMPLETED', start_time__isnull=False, end_time__isnull=False)
+        trip_durations = [(t.end_time - t.start_time).total_seconds() / 60.0 for t in trips]
+        avg_duration = round(sum(trip_durations) / len(trip_durations), 1) if trip_durations else 0.0
+
+        completed_trips = Trip.objects.filter(status='COMPLETED')
+        trip_distances = [t.distance_km for t in completed_trips]
+        avg_distance = round(sum(trip_distances) / len(trip_distances), 1) if trip_distances else 0.0
+
+        mission_statistics = {
+            "total_missions": total_missions,
+            "completed_missions": completed_missions,
+            "cancelled_missions": cancelled_missions,
+            "success_rate": success_rate,
+            "average_trip_duration_minutes": avg_duration,
+            "average_trip_distance_km": avg_distance
+        }
+
+        # 3. Fleet Utilization
+        total_active_ambulances = Ambulance.objects.filter(status='ACTIVE').count()
+        active_deployed = Ambulance.objects.filter(status='ACTIVE').exclude(lifecycle_status='AVAILABLE').count()
+        active_utilization_rate = round((active_deployed / total_active_ambulances * 100), 1) if total_active_ambulances > 0 else 0.0
+
+        total_seconds = 0
+        now_time = timezone.now()
+        for trip in Trip.objects.all():
+            start = trip.start_time
+            end = trip.end_time or now_time
+            if start:
+                total_seconds += (end - start).total_seconds()
+        total_trip_hours = round(total_seconds / 3600.0, 1)
+
+        fleet_utilization = {
+            "active_utilization_rate": active_utilization_rate,
+            "total_trip_hours": total_trip_hours
+        }
+
+        # 4. Operational Performance
+        # Key lifecycle phase durations
+        from collections import defaultdict
+        mission_logs = defaultdict(list)
+        for log in AmbulanceLifecycleLog.objects.filter(mission__isnull=False).order_by('changed_at'):
+            mission_logs[log.mission_id].append(log)
+
+        phase_durations = defaultdict(list)
+        for m_id, m_logs in mission_logs.items():
+            for i in range(len(m_logs) - 1):
+                phase = m_logs[i].to_status
+                start_t = m_logs[i].changed_at
+                end_t = m_logs[i+1].changed_at
+                if start_t and end_t:
+                    dur = (end_t - start_t).total_seconds() / 60.0
+                    if dur >= 0:
+                        phase_durations[phase].append(dur)
+
+        avg_phase_durations = {
+            phase: round(sum(phase_durations[phase]) / len(phase_durations[phase]), 1) if phase_durations[phase] else 0.0
+            for phase in ['EN_ROUTE', 'AT_INCIDENT', 'PATIENT_ONBOARD', 'HOSPITAL_ARRIVAL', 'SANITIZATION']
+        }
+
+        # Daily mission volume counts (last 30 days)
+        daily_volume_counts = {}
+        for m in Mission.objects.all():
+            date_str = m.created_at.date().isoformat()
+            daily_volume_counts[date_str] = daily_volume_counts.get(date_str, 0) + 1
+
+        daily_mission_volume = []
+        for date_str in sorted(daily_volume_counts.keys())[-30:]:
+            daily_mission_volume.append({
+                "date": date_str,
+                "missions_count": daily_volume_counts[date_str]
+            })
+
+        operational_performance = {
+            "average_phase_durations_minutes": avg_phase_durations,
+            "daily_mission_volume": daily_mission_volume
+        }
+
+        return Response({
+            "response_time_metrics": response_time_metrics,
+            "mission_statistics": mission_statistics,
+            "fleet_utilization": fleet_utilization,
+            "operational_performance": operational_performance
+        }, status=status.HTTP_200_OK)
+
+
+
 

@@ -8,6 +8,8 @@ import EmergencyRequests from './EmergencyRequests';
 import DispatchConsole from './DispatchConsole';
 import DriverConsole from './DriverConsole';
 import TripsHistory from './TripsHistory';
+import AnalyticsDashboard from './AnalyticsDashboard';
+import toast from 'react-hot-toast';
 
 const Dashboard = () => {
   const { user, logout, changePassword } = useAuth();
@@ -25,18 +27,28 @@ const Dashboard = () => {
       const unreadItems = response.data;
       setUnreadCount(unreadItems.length);
 
-      // Trigger desktop alerts for new unread notifications
-      if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
-        unreadItems.forEach(item => {
-          if (!notifiedIdsRef.current.has(item.id)) {
-            notifiedIdsRef.current.add(item.id);
-            new Notification(item.title, {
-              body: item.message,
-              icon: '/favicon.svg'
-            });
-          }
-        });
-      }
+      // Trigger alerts for new unread notifications
+      unreadItems.forEach(item => {
+        if (!notifiedIdsRef.current.has(item.id)) {
+          notifiedIdsRef.current.add(item.id);
+          
+          // Trigger React Hot Toast in-app notification
+          toast(
+            <div>
+              <strong>{item.title}</strong>
+              <div style={{ fontSize: '0.78rem', marginTop: '4px', opacity: 0.9 }}>{item.message}</div>
+            </div>,
+            { 
+              icon: '🔔',
+              style: {
+                borderLeft: '4px solid #6366f1'
+              }
+            }
+          );
+
+
+        }
+      });
     } catch (err) {
       console.error("Error fetching unread notification count:", err);
     }
@@ -56,12 +68,7 @@ const Dashboard = () => {
   useEffect(() => {
     if (!user) return;
     
-    // Request desktop notifications permission
-    if (typeof window !== 'undefined' && 'Notification' in window) {
-      if (Notification.permission === 'default') {
-        Notification.requestPermission();
-      }
-    }
+
 
     fetchUnreadCount();
 
@@ -170,6 +177,9 @@ const Dashboard = () => {
   const showDispatchConsoleTab = ['HOSPITAL_ADMINISTRATOR', 'DISPATCHER'].includes(userRole);
   const showDriverConsoleTab = ['DRIVER'].includes(userRole);
   const showTripHistoryTab = ['HOSPITAL_ADMINISTRATOR', 'DISPATCHER'].includes(userRole);
+  const showDispatcherDashboard = ['HOSPITAL_ADMINISTRATOR', 'DISPATCHER'].includes(userRole);
+  const showFleetDashboard = ['HOSPITAL_ADMINISTRATOR', 'FLEET_MANAGER'].includes(userRole);
+  const showAdminDashboard = ['HOSPITAL_ADMINISTRATOR'].includes(userRole);
 
   return (
     <div className="dashboard-container">
@@ -354,6 +364,30 @@ const Dashboard = () => {
             >
               👤 Profile & Security
             </button>
+            {showDispatcherDashboard && (
+              <button 
+                className={`tab-btn ${activeTab === 'dispatcher-dashboard' ? 'active' : ''}`}
+                onClick={() => setActiveTab('dispatcher-dashboard')}
+              >
+                📊 Dispatcher Dashboard
+              </button>
+            )}
+            {showFleetDashboard && (
+              <button 
+                className={`tab-btn ${activeTab === 'fleet-dashboard' ? 'active' : ''}`}
+                onClick={() => setActiveTab('fleet-dashboard')}
+              >
+                🚛 Fleet Dashboard
+              </button>
+            )}
+            {showAdminDashboard && (
+              <button 
+                className={`tab-btn ${activeTab === 'admin-dashboard' ? 'active' : ''}`}
+                onClick={() => setActiveTab('admin-dashboard')}
+              >
+                📈 Admin Analytics
+              </button>
+            )}
             {showEmergencyQueueTab && (
               <button 
                 className={`tab-btn ${activeTab === 'emergency-queue' ? 'active' : ''}`}
@@ -503,6 +537,9 @@ const Dashboard = () => {
             </section>
           </div>
         )}
+        {activeTab === 'dispatcher-dashboard' && <AnalyticsDashboard type="dispatcher" />}
+        {activeTab === 'fleet-dashboard' && <AnalyticsDashboard type="fleet" />}
+        {activeTab === 'admin-dashboard' && <AnalyticsDashboard type="admin" />}
         {activeTab === 'ambulances' && <Ambulances />}
         {activeTab === 'drivers' && <Drivers />}
         {(activeTab === 'emergency-queue' || activeTab === 'emergency-requests') && <EmergencyRequests />}

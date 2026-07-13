@@ -270,5 +270,22 @@ class Command(BaseCommand):
             amb_mp_09.equipment.add(equipments['Defibrillator'], equipments['Oxygen Tank'], equipments['First Aid Kit'])
             self.stdout.write("Assigned equipment to AMB-MP-09")
 
+        self.stdout.write('Seeding active shifts for drivers...')
+        from django.utils import timezone
+        from datetime import timedelta
+        from ambulances.models import Shift
+        
+        now = timezone.now()
+        drivers = Driver.objects.all()
+        for d in drivers:
+            Shift.objects.get_or_create(
+                driver=d,
+                defaults={
+                    'start_time': now - timedelta(hours=4),
+                    'end_time': now + timedelta(hours=8)
+                }
+            )
+            self.stdout.write(f"Created active shift for driver: {d.user.email}")
+
         self.stdout.write(self.style.SUCCESS('Database seeding completed successfully.'))
 

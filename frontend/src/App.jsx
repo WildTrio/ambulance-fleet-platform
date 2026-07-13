@@ -4,6 +4,7 @@ import { AuthProvider } from './context/AuthContext';
 import ProtectedRoute from './components/ProtectedRoute';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
+import { Toaster } from 'react-hot-toast';
 import './App.css';
 
 function App() {
@@ -40,6 +41,20 @@ function App() {
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </Router>
+      <Toaster 
+        position="top-right" 
+        toastOptions={{
+          duration: 5000,
+          style: {
+            background: '#0d1527',
+            color: '#f8fafc',
+            border: '1px solid rgba(255, 255, 255, 0.1)',
+            borderRadius: '8px',
+            fontSize: '0.9rem',
+            zIndex: 99999
+          }
+        }} 
+      />
     </AuthProvider>
   );
 }
