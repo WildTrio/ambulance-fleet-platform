@@ -78,6 +78,27 @@ A secure, role-restricted web platform for managing hospital ambulance fleets, d
 * **Trip History Console & Reports**: Features a premium, interactive archive panel for administrators and dispatchers to query logs by driver, ambulance, status, and date range, with a printable summary report layout.
 * **Driver Past Trips Archive**: Provides drivers with a collapsible "Past Trips History" panel in their console to review their completed/cancelled mission records.
 
+### Phase 9: GPS Tracking & Location Services
+* **Real-Time Location Updates**: Implements tracking coordinates (`current_latitude` and `current_longitude` on the `Ambulance` model) and logging location history dynamically via `GPSLog` records linked to active `Trip` and `Ambulance` models.
+* **Geocoded Route Mapping**: Draws live paths and dynamic routing/ETA metrics in parallel using GraphHopper Routing API (with geodesic/straight-line calculations as backup) in Dispatcher/Driver consoles.
+* **Telemetry Simulator & Control**: Features route simulation options on the Driver Console for developers to simulate driving telemetry along routes, sending location updates to the backend at regular intervals.
+* **Interactive Leaflet Maps**: Renders map cards with live updates in the Dispatcher Console, Driver Console, and Trip Details modal.
+
+### Phase 10: Notification Management
+* **Decoupled Event Triggers**: Employs Django Signals to capture system milestones (New Emergency Request, Ambulance Assigned, Driver Assigned, Mission Status updates) and critical request escalation checks.
+* **Multi-Channel Delivery Engine**: Broadcasts updates across four channels: in-app notification inbox, browser desktop Push Notifications API, SMTP console logs (Emails), and Twilio bypass log entries (SMS).
+* **Notification bell widget**: Integrates a notification inbox bell in the navigation bar to preview and mark notifications as read.
+
+### Phase 11: Dashboard & Analytics
+* **Dispatcher Dashboard**: Real-time workload overview displaying pending emergency requests, active missions, and available standby ambulances.
+* **Fleet Dashboard**: Operational fleet summary monitoring ready/availability rate, driver active shifts status (on-duty vs off-duty), and maintenance/sanitization logs.
+* **Administrator Analytics & KPI Dashboard**: Complete analytics dashboard illustrating operational performance trends, including average response times (broken down by case priority), mission success rates, utilization rates, average trip distance/duration, and phase duration bottlenecks (e.g. sanitization or transit phases).
+
+### Phase 12: Testing & Quality Assurance
+* **Automated Integration & Regression Tests**: Includes 95 backend unit and integration tests checking access controls, database triggers, model calculations, and API routing workflows.
+* **Performance & N+1 Query Auditing**: Enforces strict database execution boundaries using Django's `assertNumQueries` to ensure heavy dashboard and search endpoints are optimized using prefetching.
+* **User Acceptance Testing (UAT) Script**: Outlines clear, step-by-step role-based scripts walking manually through the intake, dispatch, telemetry, driver stepper, and analytics verification processes.
+
 ---
 
 ## 💻 Running the Project Locally
@@ -140,8 +161,8 @@ All mock accounts are preseeded with the password **`Password123`**:
 ---
 
 ## 🧪 Testing the APIs
-To run backend unit test suites checking authentication rules, RBAC permissions, driver profiles, shifts, certifications, vehicle business constraints, and emergency request lifecycles:
+To run backend unit test suites checking authentication rules, RBAC permissions, driver profiles, shifts, certifications, vehicle business constraints, emergency request lifecycles, and notification events:
 ```bash
 # From the backend directory
-.venv/bin/python manage.py test authentication ambulances
+.venv/bin/python manage.py test authentication ambulances notifications
 ```
