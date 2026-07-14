@@ -23,12 +23,12 @@ class NotificationTests(APITestCase):
         self.driver_user2 = User.objects.create_user(email='driver2_notif@h.org', name='Driver User 2', password='Password123!', role=self.driver_role)
 
         # Setup Models
-        self.hosp = Hospital.objects.create(hospital_name="Notification Hospital", address="456 Ave", city="City", state="ST", contact_number="555-0200")
+        self.hosp = Hospital.objects.create(hospital_name="Notification Hospital", address="456 Ave", city="City", state="ST", contact_number="5550200000")
         self.station = Station.objects.create(hospital=self.hosp, station_name="Base Station", latitude=40.7128, longitude=-74.0060)
         self.amb = Ambulance.objects.create(ambulance_number="AMB-900", hospital=self.hosp, station=self.station, type='Basic Life Support', status='ACTIVE')
         
-        self.driver = Driver.objects.create(user=self.driver_user, license_number="DL-900", contact="111-333-5555", availability=True)
-        self.driver2 = Driver.objects.create(user=self.driver_user2, license_number="DL-901", contact="111-333-6666", availability=True)
+        self.driver = Driver.objects.create(user=self.driver_user, license_number="DL-900", contact="1113335555", availability=True)
+        self.driver2 = Driver.objects.create(user=self.driver_user2, license_number="DL-901", contact="1113336666", availability=True)
 
         DriverAssignment.objects.create(driver=self.driver, ambulance=self.amb)
 
@@ -36,7 +36,7 @@ class NotificationTests(APITestCase):
         # 1. Dispatcher logs new emergency request
         self.client.force_authenticate(user=self.disp_user)
         req = EmergencyRequest.objects.create(
-            requester_name="Jane Doe", contact_number="555-030-0300", emergency_type="Stroke",
+            requester_name="Jane Doe", contact_number="5550300300", emergency_type="Stroke",
             priority="CRITICAL", pickup_location="Central Park", latitude=40.7850, longitude=-73.9680,
             status='PENDING', created_by=self.disp_user
         )
@@ -52,7 +52,7 @@ class NotificationTests(APITestCase):
     def test_dispatch_mission_creates_notifications(self):
         # Setup emergency request
         req = EmergencyRequest.objects.create(
-            requester_name="Jane Doe", contact_number="555-030-0300", emergency_type="Stroke",
+            requester_name="Jane Doe", contact_number="5550300300", emergency_type="Stroke",
             priority="CRITICAL", pickup_location="Central Park", latitude=40.7850, longitude=-73.9680,
             status='PENDING', created_by=self.disp_user
         )
@@ -81,7 +81,7 @@ class NotificationTests(APITestCase):
     def test_mission_started_notifies_dispatcher_and_requester(self):
         # Create mission
         req = EmergencyRequest.objects.create(
-            requester_name="Jane Doe", contact_number="555-030-0300", emergency_type="Stroke",
+            requester_name="Jane Doe", contact_number="5550300300", emergency_type="Stroke",
             priority="CRITICAL", pickup_location="Central Park", latitude=40.7850, longitude=-73.9680,
             status='PENDING', created_by=self.disp_user
         )
@@ -101,7 +101,7 @@ class NotificationTests(APITestCase):
         # Create request created 5 minutes ago (lte 3 minutes ago)
         old_time = timezone.now() - timedelta(minutes=5)
         req = EmergencyRequest.objects.create(
-            requester_name="Jane Doe", contact_number="555-030-0300", emergency_type="Stroke",
+            requester_name="Jane Doe", contact_number="5550300300", emergency_type="Stroke",
             priority="CRITICAL", pickup_location="Central Park", latitude=40.7850, longitude=-73.9680,
             status='PENDING', created_by=self.disp_user
         )

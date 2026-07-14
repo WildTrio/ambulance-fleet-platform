@@ -35,7 +35,7 @@ class AmbulanceDashboardAPITests(APITestCase):
             address="123 Hospital Lane",
             city="City",
             state="ST",
-            contact_number="123-456"
+            contact_number="1234567890"
         )
         self.station = Station.objects.create(
             hospital=self.hospital,
@@ -141,7 +141,7 @@ class AmbulanceDashboardAPITests(APITestCase):
             ambulance_number="AMB-D1", hospital=self.hospital, station=self.station,
             type="Basic Life Support", status="ACTIVE", lifecycle_status="AVAILABLE"
         )
-        drv = Driver.objects.create(user=self.driver_user, contact="999", license_number="LIC999")
+        drv = Driver.objects.create(user=self.driver_user, contact="9999999999", license_number="LIC999")
         DriverAssignment.objects.create(driver=drv, ambulance=amb)
 
         req_assigned = EmergencyRequest.objects.create(
@@ -184,7 +184,7 @@ class AmbulanceDashboardAPITests(APITestCase):
             type="Basic Life Support", status="ACTIVE", lifecycle_status="SANITIZATION"
         )
 
-        drv = Driver.objects.create(user=self.driver_user, contact="123", license_number="L123", availability=True)
+        drv = Driver.objects.create(user=self.driver_user, contact="1231231234", license_number="L123", availability=True)
         # Shift
         now = timezone.now()
         Shift.objects.create(driver=drv, start_time=now - timedelta(hours=1), end_time=now + timedelta(hours=3))
@@ -224,7 +224,7 @@ class AmbulanceDashboardAPITests(APITestCase):
             ambulance_number="AMB-A1", hospital=self.hospital, station=self.station,
             type="Advanced Life Support", status="ACTIVE", lifecycle_status="AT_INCIDENT"
         )
-        drv = Driver.objects.create(user=self.driver_user, contact="777", license_number="L777")
+        drv = Driver.objects.create(user=self.driver_user, contact="7777777777", license_number="L777")
         DriverAssignment.objects.create(driver=drv, ambulance=amb)
         
         mission = Mission.objects.create(

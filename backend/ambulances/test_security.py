@@ -25,8 +25,9 @@ class SecurityValidationTests(APITestCase):
         self.citizen_user = User.objects.create_user(email='citizen@g.com', name='Citizen', password='Password123!', role=self.citizen_role)
 
         # Create supporting objects for database integrity
-        self.hospital = Hospital.objects.create(hospital_name="City Hospital", address="123 St", city="City", state="ST", contact_number="123")
+        self.hospital = Hospital.objects.create(hospital_name="City Hospital", address="123 St", city="City", state="ST", contact_number="1234567890")
         self.station = Station.objects.create(hospital=self.hospital, station_name="Station A", latitude=40.7, longitude=-74.0)
+
         self.ambulance = Ambulance.objects.create(ambulance_number="AMB-SEC", hospital=self.hospital, station=self.station, status="ACTIVE")
 
     def test_anonymous_access_blocked(self):

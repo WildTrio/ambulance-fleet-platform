@@ -19,9 +19,23 @@ def get_user_hospital(user):
     return user.hospital
 
 class HospitalSerializer(serializers.ModelSerializer):
+    contact_number = serializers.CharField(max_length=20, required=True)
+
     class Meta:
         model = Hospital
         fields = ['id', 'hospital_name', 'address', 'city', 'state', 'contact_number']
+
+    def validate_contact_number(self, value):
+        import re
+        if not value:
+            raise serializers.ValidationError("Contact number is required.")
+        if not re.match(r'^[\d\s\-\(\)\+]+$', value):
+            raise serializers.ValidationError("Contact number contains invalid characters.")
+        cleaned = re.sub(r'\D', '', value)
+        if len(cleaned) != 10:
+            raise serializers.ValidationError("Contact number must contain exactly 10 digits.")
+        return cleaned
+
 
 class StationSerializer(serializers.ModelSerializer):
     class Meta:
@@ -32,6 +46,7 @@ class DriverSerializer(serializers.ModelSerializer):
     name = serializers.CharField(source='user.name', required=True)
     email = serializers.EmailField(source='user.email', required=True)
     password = serializers.CharField(write_only=True, required=False, allow_blank=True)
+    contact = serializers.CharField(max_length=20, required=True)
 
     class Meta:
         model = Driver
@@ -350,6 +365,7 @@ class ChangeStatusSerializer(serializers.Serializer):
 
 class EmergencyRequestSerializer(serializers.ModelSerializer):
     created_by = UserSerializer(read_only=True)
+    contact_number = serializers.CharField(max_length=20, required=True)
 
     class Meta:
         model = EmergencyRequest
@@ -379,7 +395,8 @@ class EmergencyRequestSerializer(serializers.ModelSerializer):
         cleaned = re.sub(r'\D', '', value)
         if len(cleaned) != 10:
             raise serializers.ValidationError("Contact number must contain exactly 10 digits.")
-        return value
+        return cleaned
+
 
 
 class MissionSerializer(serializers.ModelSerializer):

@@ -78,3 +78,5 @@ Base path: `/api/`
 - **Availability Guard**: Ensure that drivers marked unavailable (`availability=False` and no active assignment) cannot be assigned to an ambulance.
 - **Assignment Integrity**: Enforce that a driver can only have one active ambulance assignment at a time.
 - **Cascade Delete**: Deleting a driver cleans up their linked User account.
+- **Contact Number Format Check**: Enforce that the contact number of a driver must be exactly 10 digits (matching pattern `^[0-9]{10}$`) at both application level (serializers) and database layer (check constraints) to prevent invalid data entry.
+

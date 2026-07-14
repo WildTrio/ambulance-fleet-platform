@@ -38,16 +38,17 @@ class Command(BaseCommand):
                 'address': '123 Health Ave',
                 'city': 'Metropolis',
                 'state': 'NY',
-                'contact_number': '555-0199'
+                'contact_number': '5550100199'
             },
             {
                 'hospital_name': 'Khargone District Hospital',
                 'address': 'Khandwa Road',
                 'city': 'Khargone',
                 'state': 'MP',
-                'contact_number': '555-0200'
+                'contact_number': '5550100200'
             },
         ]
+
 
         hospitals = {}
         for h_info in hospitals_data:

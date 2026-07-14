@@ -111,11 +111,11 @@ class EmergencyRequestAPITests(APITestCase):
     def test_list_emergency_requests_rbac(self):
         # Create some requests
         req1 = EmergencyRequest.objects.create(
-            requester_name="Req 1", contact_number="123-456-7890", emergency_type="A",
+            requester_name="Req 1", contact_number="1234567890", emergency_type="A",
             pickup_location="Loc 1", latitude=0, longitude=0, created_by=self.citizen_1
         )
         req2 = EmergencyRequest.objects.create(
-            requester_name="Req 2", contact_number="098-765-4321", emergency_type="B",
+            requester_name="Req 2", contact_number="0987654321", emergency_type="B",
             pickup_location="Loc 2", latitude=0, longitude=0, created_by=self.citizen_2
         )
 
@@ -183,7 +183,7 @@ class EmergencyRequestAPITests(APITestCase):
 
     def test_update_emergency_request_citizen_flow(self):
         req = EmergencyRequest.objects.create(
-            requester_name="Citizen One", contact_number="123-456-7890", emergency_type="Trauma",
+            requester_name="Citizen One", contact_number="1234567890", emergency_type="Trauma",
             pickup_location="Original St", latitude=12.0, longitude=13.0, status="PENDING", created_by=self.citizen_1
         )
 
@@ -212,7 +212,7 @@ class EmergencyRequestAPITests(APITestCase):
     def test_update_details_blocked_for_citizen_when_assigned(self):
         # Create assigned request
         req = EmergencyRequest.objects.create(
-            requester_name="Citizen One", contact_number="123-456-7890", emergency_type="Trauma",
+            requester_name="Citizen One", contact_number="1234567890", emergency_type="Trauma",
             pickup_location="Original St", latitude=12.0, longitude=13.0, status="ASSIGNED", created_by=self.citizen_1
         )
 
@@ -233,7 +233,7 @@ class EmergencyRequestAPITests(APITestCase):
 
     def test_modification_disabled_after_completed_or_cancelled(self):
         req_comp = EmergencyRequest.objects.create(
-            requester_name="Jane", contact_number="123-456-7890", emergency_type="A",
+            requester_name="Jane", contact_number="1234567890", emergency_type="A",
             pickup_location="Loc", latitude=0, longitude=0, status="COMPLETED", created_by=self.citizen_1
         )
         url_comp = reverse('emergency-request-detail', kwargs={'pk': req_comp.pk})
@@ -247,7 +247,7 @@ class EmergencyRequestAPITests(APITestCase):
 
     def test_delete_emergency_request_method_not_allowed(self):
         req = EmergencyRequest.objects.create(
-            requester_name="Jane", contact_number="123-456-7890", emergency_type="A",
+            requester_name="Jane", contact_number="1234567890", emergency_type="A",
             pickup_location="Loc", latitude=0, longitude=0, status="PENDING", created_by=self.citizen_1
         )
         url = reverse('emergency-request-detail', kwargs={'pk': req.pk})

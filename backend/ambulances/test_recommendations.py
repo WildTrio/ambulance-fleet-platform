@@ -26,7 +26,7 @@ class AmbulanceRecommendationAPITests(APITestCase):
         self.citizen_user = User.objects.create_user(email='cit_rec@gmail.com', name='Citizen User', password='Password123!', role=self.requestor_role)
 
         # Base Entities
-        self.hospital = Hospital.objects.create(hospital_name="Recommendation Central Hospital", address="123 Hospital Lane", city="City", state="ST", contact_number="123-456")
+        self.hospital = Hospital.objects.create(hospital_name="Recommendation Central Hospital", address="123 Hospital Lane", city="City", state="ST", contact_number="1234567890")
         
         # Stations at different locations
         # Base Coordinate is (40.7128, -74.0060) - NYC City Hall
@@ -39,9 +39,9 @@ class AmbulanceRecommendationAPITests(APITestCase):
 
         # Drivers
         self.driver1_user = User.objects.create_user(email='drv1@h.org', name='Driver One', password='Password123!', role=self.driver_role)
-        self.driver1 = Driver.objects.create(user=self.driver1_user, contact="111-222", license_number="LIC-1", availability=False)
+        self.driver1 = Driver.objects.create(user=self.driver1_user, contact="1112223333", license_number="LIC-1", availability=False)
         self.driver2_user = User.objects.create_user(email='drv2@h.org', name='Driver Two', password='Password123!', role=self.driver_role)
-        self.driver2 = Driver.objects.create(user=self.driver2_user, contact="333-444", license_number="LIC-2", availability=False)
+        self.driver2 = Driver.objects.create(user=self.driver2_user, contact="3334445555", license_number="LIC-2", availability=False)
 
         # Equipment
         self.defib = Equipment.objects.create(name="Defibrillator")
@@ -72,11 +72,11 @@ class AmbulanceRecommendationAPITests(APITestCase):
         
         # Driver for busy ambulance
         self.driver_busy_user = User.objects.create_user(email='drvbusy@h.org', name='Driver Busy', password='Password123!', role=self.driver_role)
-        self.driver_busy = Driver.objects.create(user=self.driver_busy_user, contact="555-666", license_number="LIC-BUSY", availability=False)
+        self.driver_busy = Driver.objects.create(user=self.driver_busy_user, contact="5556667777", license_number="LIC-BUSY", availability=False)
         DriverAssignment.objects.create(driver=self.driver_busy, ambulance=self.amb_busy)
 
         self.req_busy = EmergencyRequest.objects.create(
-            requester_name="John Busy", contact_number="555-555-5555", emergency_type="General",
+            requester_name="John Busy", contact_number="5555555555", emergency_type="General",
             priority="MEDIUM", pickup_location="Close", latitude=40.7128, longitude=-73.9960,
             status="ASSIGNED", created_by=self.dispatcher_user
         )

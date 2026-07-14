@@ -24,13 +24,14 @@ class AmbulanceAPITests(APITestCase):
         self.driver_user_2 = User.objects.create_user(email='driver2@h.org', name='Driver2', password='Password123!', role=self.driver_role)
 
         # Create supporting objects
-        self.hospital = Hospital.objects.create(hospital_name="City Hospital", address="123 Road", city="City", state="ST", contact_number="123")
+        self.hospital = Hospital.objects.create(hospital_name="City Hospital", address="123 Road", city="City", state="ST", contact_number="1234567890")
         self.station_a = Station.objects.create(hospital=self.hospital, station_name="Station A", latitude=40.7, longitude=-74.0)
         self.station_b = Station.objects.create(hospital=self.hospital, station_name="Station B", latitude=40.8, longitude=-74.1)
 
         # Create driver profiles
-        self.driver_1 = Driver.objects.create(user=self.driver_user_1, contact="123", license_number="LIC1", availability=True)
-        self.driver_2 = Driver.objects.create(user=self.driver_user_2, contact="456", license_number="LIC2", availability=True)
+        self.driver_1 = Driver.objects.create(user=self.driver_user_1, contact="1234567890", license_number="LIC1", availability=True)
+        self.driver_2 = Driver.objects.create(user=self.driver_user_2, contact="4564564567", license_number="LIC2", availability=True)
+
 
         # Create ambulances
         self.ambulance_active = Ambulance.objects.create(ambulance_number="AMB-001", hospital=self.hospital, station=self.station_a, type="Basic Life Support", status="ACTIVE")
@@ -426,7 +427,7 @@ class DriverManagementAPITests(APITestCase):
 
     def test_update_driver_availability_closes_assignment(self):
         # 1. Create hospital, station, ambulance
-        hospital = Hospital.objects.create(hospital_name="City Hospital", address="123 Road", city="City", state="ST", contact_number="123")
+        hospital = Hospital.objects.create(hospital_name="City Hospital", address="123 Road", city="City", state="ST", contact_number="1234567890")
         station = Station.objects.create(hospital=hospital, station_name="Station A", latitude=40.7, longitude=-74.0)
         ambulance = Ambulance.objects.create(ambulance_number="AMB-D1", hospital=hospital, station=station, status="ACTIVE")
         
@@ -466,7 +467,7 @@ class DriverManagementAPITests(APITestCase):
 
     def test_cannot_make_driver_available_while_on_mission(self):
         # 1. Create hospital, station, ambulance
-        hospital = Hospital.objects.create(hospital_name="City Hospital", address="123 Road", city="City", state="ST", contact_number="123")
+        hospital = Hospital.objects.create(hospital_name="City Hospital", address="123 Road", city="City", state="ST", contact_number="1234567890")
         station = Station.objects.create(hospital=hospital, station_name="Station A", latitude=40.7, longitude=-74.0)
         ambulance = Ambulance.objects.create(ambulance_number="AMB-D1", hospital=hospital, station=station, status="ACTIVE")
         
@@ -479,7 +480,7 @@ class DriverManagementAPITests(APITestCase):
         citizen_role = Role.objects.get_or_create(name='EMERGENCY_REQUESTOR')[0]
         citizen_user = User.objects.create_user(email='citizen_test@g.com', name='Citizen', password='Password123!', role=citizen_role)
         req = EmergencyRequest.objects.create(
-            requester_name="Patient A", contact_number="555-999-9999", emergency_type="Stroke",
+            requester_name="Patient A", contact_number="5559999999", emergency_type="Stroke",
             priority="CRITICAL", pickup_location="789 Market St", latitude=40.7, longitude=-74.0,
             status="ASSIGNED", created_by=citizen_user
         )
@@ -509,7 +510,7 @@ class DriverManagementAPITests(APITestCase):
         from django.utils import timezone
         
         # 1. Create a dummy ambulance for testing active assignments
-        hospital = Hospital.objects.create(hospital_name="City Hospital", address="123 Road", city="City", state="ST", contact_number="123")
+        hospital = Hospital.objects.create(hospital_name="City Hospital", address="123 Road", city="City", state="ST", contact_number="1234567890")
         station = Station.objects.create(hospital=hospital, station_name="Station A", latitude=40.7, longitude=-74.0)
         ambulance = Ambulance.objects.create(ambulance_number="AMB-DEL-D", hospital=hospital, station=station, status="ACTIVE")
 
@@ -648,7 +649,7 @@ class DispatchConsoleMissionTests(APITestCase):
         self.driver1 = Driver.objects.create(user=self.driver_user, contact="5550100001", license_number="DL-101", availability=True)
         
         # Hospital & Stations
-        self.hospital = Hospital.objects.create(hospital_name="City Hospital", address="123 Hospital St", city="City", state="State", contact_number="1234567")
+        self.hospital = Hospital.objects.create(hospital_name="City Hospital", address="123 Hospital St", city="City", state="State", contact_number="1234567890")
         self.station1 = Station.objects.create(hospital=self.hospital, station_name="Station A", latitude=37.774900, longitude=-122.419400)
         self.station2 = Station.objects.create(hospital=self.hospital, station_name="Station B", latitude=37.784900, longitude=-122.429400)
 
@@ -664,12 +665,12 @@ class DispatchConsoleMissionTests(APITestCase):
 
         # Emergency Requests
         self.req1 = EmergencyRequest.objects.create(
-            requester_name="Patient A", contact_number="555-999-9999", emergency_type="Stroke",
+            requester_name="Patient A", contact_number="5559999999", emergency_type="Stroke",
             priority="CRITICAL", pickup_location="789 Market St", latitude=37.774900, longitude=-122.419400,
             status="PENDING", created_by=self.citizen_user
         )
         self.req2 = EmergencyRequest.objects.create(
-            requester_name="Patient B", contact_number="555-888-8888", emergency_type="Trauma",
+            requester_name="Patient B", contact_number="5558888888", emergency_type="Trauma",
             priority="HIGH", pickup_location="456 Mission St", latitude=37.778000, longitude=-122.422000,
             status="PENDING", created_by=self.citizen_user
         )
@@ -1068,7 +1069,7 @@ class DigitalTripManagementTests(APITestCase):
             address="123 Main St",
             city="Metropolis",
             state="NY",
-            contact_number="555-0199"
+            contact_number="5550100199"
         )
         
         # Create Stations
@@ -1099,13 +1100,13 @@ class DigitalTripManagementTests(APITestCase):
         self.driver1 = Driver.objects.create(
             user=self.driver_user,
             license_number="DL-100",
-            contact="111-222-3333",
+            contact="1112223333",
             availability=True
         )
         self.driver2 = Driver.objects.create(
             user=self.driver_user2,
             license_number="DL-200",
-            contact="111-222-4444",
+            contact="1112224444",
             availability=True
         )
 
@@ -1117,7 +1118,7 @@ class DigitalTripManagementTests(APITestCase):
         # Create EmergencyRequest (incident location: 40.7300, -73.9800)
         self.req = EmergencyRequest.objects.create(
             requester_name="John Requestor",
-            contact_number="555-010-0100",
+            contact_number="5550100100",
             emergency_type="Cardiac Arrest",
             priority="CRITICAL",
             pickup_location="Times Square",
@@ -1269,12 +1270,12 @@ class GPSTrackingTests(APITestCase):
         self.driver_user = User.objects.create_user(email='driver_gps@h.org', name='Rahul Driver', password='Password123!', role=self.driver_role)
         self.driver_user2 = User.objects.create_user(email='driver2_gps@h.org', name='Bob Driver', password='Password123!', role=self.driver_role)
 
-        self.hosp = Hospital.objects.create(hospital_name="City Hospital", address="123 Main St", city="City", state="ST", contact_number="555-0199")
+        self.hosp = Hospital.objects.create(hospital_name="City Hospital", address="123 Main St", city="City", state="ST", contact_number="5550100199")
         self.station = Station.objects.create(hospital=self.hosp, station_name="North Station", latitude=40.7128, longitude=-74.0060)
         self.amb = Ambulance.objects.create(ambulance_number="AMB-500", hospital=self.hosp, station=self.station, type='Basic Life Support', status='ACTIVE')
         
-        self.driver1 = Driver.objects.create(user=self.driver_user, license_number="DL-100-GPS", contact="111-222-3333", availability=True)
-        self.driver2 = Driver.objects.create(user=self.driver_user2, license_number="DL-200-GPS", contact="111-222-4444", availability=True)
+        self.driver1 = Driver.objects.create(user=self.driver_user, license_number="DL-100-GPS", contact="1112223333", availability=True)
+        self.driver2 = Driver.objects.create(user=self.driver_user2, license_number="DL-200-GPS", contact="1112224444", availability=True)
 
         # Assign driver1 to ambulance
         DriverAssignment.objects.create(driver=self.driver1, ambulance=self.amb)
@@ -1283,7 +1284,7 @@ class GPSTrackingTests(APITestCase):
 
         # Emergency Request
         self.req = EmergencyRequest.objects.create(
-            requester_name="John Requestor", contact_number="555-010-0100", emergency_type="Cardiac Arrest",
+            requester_name="John Requestor", contact_number="5550100100", emergency_type="Cardiac Arrest",
             priority="CRITICAL", pickup_location="Times Square", latitude=40.7300, longitude=-73.9800,
             status='PENDING', created_by=self.disp_user
         )

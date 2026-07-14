@@ -1,6 +1,7 @@
 import uuid
 from django.db import models
 from django.conf import settings
+from django.core.validators import RegexValidator
 
 class Hospital(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -8,10 +9,27 @@ class Hospital(models.Model):
     address = models.CharField(max_length=255)
     city = models.CharField(max_length=100)
     state = models.CharField(max_length=100)
-    contact_number = models.CharField(max_length=20)
+    contact_number = models.CharField(
+        max_length=20,
+        validators=[
+            RegexValidator(
+                regex=r'^\d{10}$',
+                message="Contact number must be exactly 10 digits."
+            )
+        ]
+    )
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                check=models.Q(contact_number__regex=r'^[0-9]{10}$'),
+                name='hospital_contact_number_must_be_10_digits'
+            )
+        ]
 
     def __str__(self):
         return self.hospital_name
+
 
 class Station(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -113,8 +131,6 @@ class Ambulance(models.Model):
         )
         return self
 
-from django.core.validators import RegexValidator
-
 class Driver(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='driver_profile')
@@ -131,8 +147,17 @@ class Driver(models.Model):
     license_number = models.CharField(max_length=50, unique=True)
     availability = models.BooleanField(default=True)
 
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                check=models.Q(contact__regex=r'^[0-9]{10}$'),
+                name='driver_contact_must_be_10_digits'
+            )
+        ]
+
     def __str__(self):
         return f"{self.user.name} - {self.license_number}"
+
 
 class DriverAssignment(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -218,7 +243,15 @@ class EmergencyRequest(models.Model):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     requester_name = models.CharField(max_length=255)
-    contact_number = models.CharField(max_length=20)
+    contact_number = models.CharField(
+        max_length=20,
+        validators=[
+            RegexValidator(
+                regex=r'^\d{10}$',
+                message="Contact number must be exactly 10 digits."
+            )
+        ]
+    )
     emergency_type = models.CharField(max_length=100)
     priority = models.CharField(max_length=20, choices=PRIORITY_CHOICES, default='MEDIUM')
     pickup_location = models.CharField(max_length=255)
@@ -242,8 +275,17 @@ class EmergencyRequest(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                check=models.Q(contact_number__regex=r'^[0-9]{10}$'),
+                name='emergency_request_contact_number_must_be_10_digits'
+            )
+        ]
+
     def __str__(self):
         return f"{self.requester_name} - {self.emergency_type} ({self.status})"
+
 
     def save(self, *args, **kwargs):
         if not self.hospital:

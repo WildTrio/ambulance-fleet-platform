@@ -25,7 +25,7 @@ class PerformanceBenchmarkingTests(APITestCase):
         self.fleet_user = User.objects.create_user(email='fleet@h.org', name='Fleet', password='Password123!', role=self.fleet_role)
 
         # Create Hospital & Stations
-        self.hospital = Hospital.objects.create(hospital_name="Test General Hospital", address="123 Health Ave", city="City", state="ST", contact_number="555")
+        self.hospital = Hospital.objects.create(hospital_name="Test General Hospital", address="123 Health Ave", city="City", state="ST", contact_number="5555555555")
         self.station = Station.objects.create(hospital=self.hospital, station_name="Central Station", latitude=21.820600, longitude=75.609400)
 
         # Create a pool of ambulances & drivers to check scaling query count
@@ -40,7 +40,7 @@ class PerformanceBenchmarkingTests(APITestCase):
             )
             driver = Driver.objects.create(
                 user=driver_user,
-                contact=f'555-010{i}',
+                contact=f'55501000{i:02d}',
                 license_number=f'DL-100{i}',
                 availability=True
             )
@@ -66,7 +66,7 @@ class PerformanceBenchmarkingTests(APITestCase):
         for i in range(5):
             req = EmergencyRequest.objects.create(
                 requester_name=f'Patient {i}',
-                contact_number=f'555-900-000{i}',
+                contact_number=f'55590000{i:02d}',
                 emergency_type="Respiratory Arrest",
                 priority="HIGH",
                 pickup_location=f'Location {i}',
