@@ -1,43 +1,69 @@
-:root {
-  font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
-  line-height: 1.5;
-  font-weight: 400;
+@import "tailwindcss";
 
-  color-scheme: dark;
-  background-color: #060813;
-
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+@theme {
+  --font-sans: "Plus Jakarta Sans", "Inter", "system-ui", "-apple-system", "sans-serif";
+  --font-body: "Inter", "system-ui", "-apple-system", "sans-serif";
+  
+  --color-border: rgb(226, 232, 240);
+  --color-background: #ffffff;
+  --color-foreground: rgb(15, 23, 42);
+  
+  --color-primary: #000000;
+  --color-primary-foreground: #ffffff;
+  
+  --color-secondary: rgb(241, 245, 249);
+  --color-secondary-foreground: rgb(15, 23, 42);
+  
+  --color-muted: rgb(248, 250, 252);
+  --color-muted-foreground: rgb(100, 116, 139);
+  
+  --color-card: #ffffff;
+  --color-card-foreground: rgb(15, 23, 42);
+  
+  --color-emergency: #ef4444;
+  --color-emergency-foreground: #ffffff;
+  
+  --color-success: #10b981;
+  --color-success-foreground: #ffffff;
+  
+  --color-info: #3b82f6;
+  --color-info-foreground: #ffffff;
+  
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+  --radius-2xl: 16px;
+  
+  --shadow-soft: 0 2px 8px rgba(0, 0, 0, 0.04);
+  --shadow-card: 0 4px 20px -2px rgba(0, 0, 0, 0.03), 0 2px 8px -1px rgba(0, 0, 0, 0.02);
 }
 
-* {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
+@utility scrollable {
+  &::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  &::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  &::-webkit-scrollbar-thumb {
+    background: #cbd5e1;
+    border-radius: 3px;
+  }
+  &::-webkit-scrollbar-thumb:hover {
+    background: #94a3b8;
+  }
 }
 
 body {
-  margin: 0;
-  padding: 0;
+  background-color: var(--color-background);
+  color: var(--color-foreground);
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
   min-height: 100vh;
-  width: 100vw;
-  background-color: #060813;
-  color: #ffffff;
-  overflow-x: hidden;
 }
 
-#root {
-  min-height: 100vh;
-  width: 100vw;
-  display: flex;
-  flex-direction: column;
-}
-
-/* Custom global animations */
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-sans);
+  letter-spacing: -0.025em;
 }

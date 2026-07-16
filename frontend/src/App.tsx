@@ -25,18 +25,6 @@ function App() {
             }
           />
 
-          {/* Role Protected Routes Example (for subsequent development phases) */}
-          {/* 
-          <Route 
-            path="/admin-only" 
-            element={
-              <ProtectedRoute allowedRoles={['HOSPITAL_ADMINISTRATOR']}>
-                <div>Admin Dashboard Component</div>
-              </ProtectedRoute>
-            } 
-          />
-          */}
-
           {/* Redirect all unmatched routes */}
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
@@ -46,11 +34,11 @@ function App() {
         toastOptions={{
           duration: 5000,
           style: {
-            background: '#0d1527',
-            color: '#f8fafc',
-            border: '1px solid rgba(255, 255, 255, 0.1)',
-            borderRadius: '8px',
-            fontSize: '0.9rem',
+            background: '#FFFFFF',
+            color: '#0F172A',
+            border: '1px solid #E2E8F0',
+            borderRadius: '12px',
+            fontSize: '0.875rem',
             zIndex: 99999
           }
         }} 

@@ -1,4 +1,4 @@
-import axios from 'axios';
+import axios, { InternalAxiosRequestConfig, AxiosError, AxiosResponse } from 'axios';
 
 const backendHost = typeof window !== 'undefined' ? window.location.hostname : 'localhost';
 
@@ -12,7 +12,7 @@ const api = axios.create({
 
 // Request interceptor to attach JWT access token
 api.interceptors.request.use(
-  (config) => {
+  (config: InternalAxiosRequestConfig) => {
     const token = localStorage.getItem('access_token');
     const isAuthUrl = config.url && (config.url.includes('/auth/refresh/') || config.url.includes('/auth/login/'));
     if (token && !isAuthUrl) {
@@ -20,14 +20,19 @@ api.interceptors.request.use(
     }
     return config;
   },
-  (error) => Promise.reject(error)
+  (error: AxiosError) => Promise.reject(error)
 );
+
+interface QueueItem {
+  resolve: (value: unknown) => void;
+  reject: (reason?: any) => void;
+}
 
 // Response interceptor to handle token refresh automatically
 let isRefreshing = false;
-let failedQueue = [];
+let failedQueue: QueueItem[] = [];
 
-const processQueue = (error, token = null) => {
+const processQueue = (error: AxiosError | null, token: string | null = null) => {
   failedQueue.forEach((prom) => {
     if (error) {
       prom.reject(error);
@@ -39,12 +44,12 @@ const processQueue = (error, token = null) => {
 };
 
 api.interceptors.response.use(
-  (response) => response,
-  async (error) => {
-    const originalRequest = error.config;
+  (response: AxiosResponse) => response,
+  async (error: AxiosError) => {
+    const originalRequest = error.config as (InternalAxiosRequestConfig & { _retry?: boolean }) | undefined;
 
     // If we receive 401 and haven't retried yet, trigger token refresh
-    if (error.response?.status === 401 && !originalRequest._retry) {
+    if (error.response?.status === 401 && originalRequest && !originalRequest._retry) {
       // Avoid infinite loop if refresh request itself returns 401
       const isAuthUrl = originalRequest.url && (originalRequest.url.includes('/auth/refresh/') || originalRequest.url.includes('/auth/login/'));
       if (isAuthUrl) {
@@ -78,8 +83,8 @@ api.interceptors.response.use(
         isRefreshing = false;
         
         return api(originalRequest);
-      } catch (refreshError) {
-        processQueue(refreshError, null);
+      } catch (refreshError: any) {
+        processQueue(refreshError as AxiosError, null);
         isRefreshing = false;
         
         // Clear tokens and trigger logout event/redirect
