@@ -41,62 +41,123 @@ const Login = () => {
   };
 
   return (
-    <div className="login-container">
-      <div className="background-decor">
-        <div className="glow-sphere sphere-1"></div>
-        <div className="glow-sphere sphere-2"></div>
-      </div>
+    <div className="login-page">
+      <header className="login-topbar">
+        <span className="login-wordmark">Lifeline</span>
+      </header>
 
-      <div className="login-card">
-        <div className="brand-header">
-          <span className="brand-icon">🚨</span>
-          <h1 className="brand-title">LIFELINE DISPATCH</h1>
-          <p className="brand-subtitle">Emergency Fleet Management & Dispatch</p>
-        </div>
+      <main className="login-main">
+        <div className="login-panel">
+          <h1 className="login-heading">
+            Sign in to access your dispatch account
+          </h1>
 
-        <form className="login-form" onSubmit={handleSubmit}>
-          {error && (
-            <div className="error-banner">
-              <span className="error-icon">⚠️</span>
-              <span className="error-message">{error}</span>
+          <form className="login-form" onSubmit={handleSubmit} noValidate>
+            {error && (
+              <div className="login-error" role="alert">
+                {error}
+              </div>
+            )}
+
+            <div className="login-field">
+              <label htmlFor="email" className="sr-only">
+                Email address
+              </label>
+              <input
+                id="email"
+                type="email"
+                autoComplete="email"
+                placeholder="Enter your email address"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                disabled={loading}
+                required
+              />
             </div>
-          )}
 
-          <div className="input-group">
-            <label htmlFor="email">Email Address</label>
-            <input
-              id="email"
-              type="email"
-              placeholder="Enter email address"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              disabled={loading}
-              required
-            />
+            <div className="login-field">
+              <label htmlFor="password" className="sr-only">
+                Password
+              </label>
+              <input
+                id="password"
+                type="password"
+                autoComplete="current-password"
+                placeholder="Enter your password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                disabled={loading}
+                required
+              />
+            </div>
+
+            <button type="submit" className="login-continue" disabled={loading}>
+              {loading ? (
+                <span className="login-spinner" aria-label="Signing in" />
+              ) : (
+                <>
+                  <span>Continue</span>
+                  <svg
+                    className="login-arrow"
+                    width="18"
+                    height="18"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    aria-hidden="true"
+                  >
+                    <path
+                      d="M5 12h14M13 6l6 6-6 6"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                </>
+              )}
+            </button>
+          </form>
+
+          <div className="login-divider" aria-hidden="true">
+            <span className="login-divider-line" />
+            <span className="login-divider-text">or</span>
+            <span className="login-divider-line" />
           </div>
 
-          <div className="input-group">
-            <label htmlFor="password">Password</label>
-            <input
-              id="password"
-              type="password"
-              placeholder="Enter password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              disabled={loading}
-              required
-            />
-          </div>
-
-          <button type="submit" className="login-submit-btn" disabled={loading}>
-            {loading ? <span className="spinner-mini"></span> : 'Secure Sign In'}
+          <button type="button" className="login-alt" disabled>
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              aria-hidden="true"
+            >
+              <rect
+                x="3"
+                y="5"
+                width="18"
+                height="14"
+                rx="2"
+                stroke="currentColor"
+                strokeWidth="2"
+              />
+              <path
+                d="M3 8l9 6 9-6"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+            <span>Contact your fleet administrator</span>
           </button>
-        </form>
 
-        <div className="login-footer">
-          <p>Protected by end-to-end audit logging & role-based access control.</p>
+          <p className="login-legal">
+            By proceeding, you consent to role-based access control and
+            end-to-end audit logging of dispatch activity.
+          </p>
         </div>
-      </div>
+      </main>
     </div>
   );
 };
