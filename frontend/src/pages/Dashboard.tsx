@@ -18,6 +18,7 @@ import {
   ChevronLeft,
   Menu,
   Shield,
+  X,
 } from "lucide-react"
 
 // @ts-expect-error - AuthContext is currently .jsx
@@ -144,6 +145,18 @@ export default function Dashboard() {
       fetchAllNotifications()
     } catch (err) {
       console.error("Error marking notification as read:", err)
+    }
+  }
+
+  const handleDeleteNotification = async (id: number, e: React.MouseEvent) => {
+    e.stopPropagation()
+    try {
+      await api.delete(`/notifications/${id}/`)
+      fetchUnreadCount()
+      fetchAllNotifications()
+      notify.success("Notification dismissed")
+    } catch (err) {
+      console.error("Error deleting notification:", err)
     }
   }
 
@@ -474,13 +487,22 @@ export default function Dashboard() {
                           className={`p-3 text-left transition-colors cursor-pointer rounded-lg hover:bg-slate-50 flex flex-col gap-1 ${notif.is_read ? "opacity-70" : "bg-blue-50/20"
                             }`}
                         >
-                          <div className="flex justify-between items-start gap-1">
+                          <div className="flex justify-between items-start gap-1.5">
                             <span className="text-xs font-semibold text-slate-900">
                               {notif.title}
                             </span>
-                            <span className="text-[9px] text-slate-400 shrink-0">
-                              {formatTimeAgo(notif.created_at)}
-                            </span>
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <span className="text-[9px] text-slate-400">
+                                {formatTimeAgo(notif.created_at)}
+                              </span>
+                              <button
+                                onClick={(e) => handleDeleteNotification(notif.id, e)}
+                                className="text-slate-400 hover:text-red-600 transition-colors p-0.5 rounded hover:bg-slate-100"
+                                title="Dismiss notification"
+                              >
+                                <X size={10} />
+                              </button>
+                            </div>
                           </div>
                           <p className="text-xs text-slate-500 leading-normal">
                             {notif.message}
