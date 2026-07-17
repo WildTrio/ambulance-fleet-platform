@@ -736,7 +736,7 @@ export default function EmergencyRequests() {
                 type="text"
                 value={contactNumber}
                 onChange={(e) => setContactNumber(e.target.value)}
-                placeholder="e.g. 5550199"
+                placeholder="e.g. 55501994567"
                 required
               />
             </div>
@@ -830,11 +830,6 @@ export default function EmergencyRequests() {
                 />
               </div>
             </div>
-
-            <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 text-[11px] leading-relaxed text-slate-500">
-              💡 <span className="font-semibold text-slate-700">Uber Tip:</span> You can click anywhere on the map to pin-point your coordinates, or drag the marker to your exact location to update this form automatically!
-            </div>
-
             {isStaff && (
               <div className="space-y-1.5">
                 <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">

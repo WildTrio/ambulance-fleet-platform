@@ -34,7 +34,7 @@ import EmergencyRequests from "./EmergencyRequests"
 // @ts-expect-error - legacy component
 import DispatchConsole from "./DispatchConsole"
 // @ts-expect-error - legacy component
-import DriverConsole from "./DriverConsole"
+import DriverConsole from "./DriverConsole.tsx"
 // @ts-expect-error - legacy component
 import TripsHistory from "./TripsHistory"
 // @ts-expect-error - legacy component
