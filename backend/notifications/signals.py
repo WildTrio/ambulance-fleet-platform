@@ -13,8 +13,10 @@ logger = logging.getLogger(__name__)
 @receiver(post_save, sender=EmergencyRequest)
 def handle_new_emergency_request(sender, instance, created, **kwargs):
     if created and instance.status == 'PENDING':
-        # Notify all DISPATCHERs and HOSPITAL_ADMINISTRATORs
+        # Notify all DISPATCHERs and HOSPITAL_ADMINISTRATORs of the same hospital
         dispatchers = User.objects.filter(role__name__in=['DISPATCHER', 'HOSPITAL_ADMINISTRATOR'])
+        if instance.hospital:
+            dispatchers = dispatchers.filter(hospital=instance.hospital)
         for user in dispatchers:
             Notification.objects.create(
                 user=user,
@@ -27,8 +29,10 @@ def handle_new_emergency_request(sender, instance, created, **kwargs):
 @receiver(post_save, sender=Mission)
 def handle_mission_notifications(sender, instance, created, **kwargs):
     if created:
-        # Ambulance Assigned (Alert Fleet Managers & Admins)
+        # Ambulance Assigned (Alert Fleet Managers & Admins of the same hospital)
         fleet_managers = User.objects.filter(role__name__in=['FLEET_MANAGER', 'HOSPITAL_ADMINISTRATOR'])
+        if instance.ambulance and instance.ambulance.hospital:
+            fleet_managers = fleet_managers.filter(hospital=instance.ambulance.hospital)
         for fm in fleet_managers:
             Notification.objects.create(
                 user=fm,
@@ -100,8 +104,10 @@ def handle_mission_notifications(sender, instance, created, **kwargs):
         # Check transition states
         # Mission Started
         if instance.status == 'EN_ROUTE':
-            # Notify Dispatchers/Admins
+            # Notify Dispatchers/Admins of the same hospital
             dispatchers = User.objects.filter(role__name__in=['DISPATCHER', 'HOSPITAL_ADMINISTRATOR'])
+            if instance.ambulance and instance.ambulance.hospital:
+                dispatchers = dispatchers.filter(hospital=instance.ambulance.hospital)
             for user in dispatchers:
                 Notification.objects.create(
                     user=user,
@@ -126,8 +132,10 @@ def handle_mission_notifications(sender, instance, created, **kwargs):
 
         # Mission Completed
         elif instance.status == 'COMPLETED':
-            # Notify Dispatchers/Admins
+            # Notify Dispatchers/Admins of the same hospital
             dispatchers = User.objects.filter(role__name__in=['DISPATCHER', 'HOSPITAL_ADMINISTRATOR'])
+            if instance.ambulance and instance.ambulance.hospital:
+                dispatchers = dispatchers.filter(hospital=instance.ambulance.hospital)
             for user in dispatchers:
                 Notification.objects.create(
                     user=user,

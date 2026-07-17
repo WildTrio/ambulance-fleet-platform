@@ -24,6 +24,19 @@ class NotificationTests(APITestCase):
 
         # Setup Models
         self.hosp = Hospital.objects.create(hospital_name="Notification Hospital", address="456 Ave", city="City", state="ST", contact_number="5550200000")
+        
+        # Associate users with the hospital
+        self.admin_user.hospital = self.hosp
+        self.admin_user.save()
+        self.disp_user.hospital = self.hosp
+        self.disp_user.save()
+        self.fm_user.hospital = self.hosp
+        self.fm_user.save()
+        self.driver_user.hospital = self.hosp
+        self.driver_user.save()
+        self.driver_user2.hospital = self.hosp
+        self.driver_user2.save()
+
         self.station = Station.objects.create(hospital=self.hosp, station_name="Base Station", latitude=40.7128, longitude=-74.0060)
         self.amb = Ambulance.objects.create(ambulance_number="AMB-900", hospital=self.hosp, station=self.station, type='Basic Life Support', status='ACTIVE')
         
