@@ -37,6 +37,8 @@ export const AuthProvider = ({ children }) => {
 
     // Listen to global session expiration events
     const handleSessionExpired = () => {
+      localStorage.removeItem('access_token');
+      delete api.defaults.headers.common['Authorization'];
       setUser(null);
     };
 
@@ -65,6 +67,7 @@ export const AuthProvider = ({ children }) => {
       // Proceed with local logout even if api call fails
     } finally {
       localStorage.removeItem('access_token');
+      delete api.defaults.headers.common['Authorization'];
       setUser(null);
     }
   };

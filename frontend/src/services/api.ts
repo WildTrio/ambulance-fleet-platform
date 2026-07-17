@@ -15,7 +15,9 @@ api.interceptors.request.use(
   (config: InternalAxiosRequestConfig) => {
     const token = localStorage.getItem('access_token');
     const isAuthUrl = config.url && (config.url.includes('/auth/refresh/') || config.url.includes('/auth/login/'));
-    if (token && !isAuthUrl) {
+    if (isAuthUrl) {
+      delete config.headers.Authorization;
+    } else if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
     return config;
