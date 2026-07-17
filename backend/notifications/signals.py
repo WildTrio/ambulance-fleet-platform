@@ -17,6 +17,9 @@ def handle_new_emergency_request(sender, instance, created, **kwargs):
         dispatchers = User.objects.filter(role__name__in=['DISPATCHER', 'HOSPITAL_ADMINISTRATOR'])
         if instance.hospital:
             dispatchers = dispatchers.filter(hospital=instance.hospital)
+        acting_user = getattr(instance, '_acting_user', None)
+        if acting_user:
+            dispatchers = dispatchers.exclude(id=acting_user.id)
         for user in dispatchers:
             Notification.objects.create(
                 user=user,
@@ -33,6 +36,9 @@ def handle_mission_notifications(sender, instance, created, **kwargs):
         fleet_managers = User.objects.filter(role__name__in=['FLEET_MANAGER', 'HOSPITAL_ADMINISTRATOR'])
         if instance.ambulance and instance.ambulance.hospital:
             fleet_managers = fleet_managers.filter(hospital=instance.ambulance.hospital)
+        acting_user = getattr(instance, '_acting_user', None)
+        if acting_user:
+            fleet_managers = fleet_managers.exclude(id=acting_user.id)
         for fm in fleet_managers:
             Notification.objects.create(
                 user=fm,
@@ -108,6 +114,9 @@ def handle_mission_notifications(sender, instance, created, **kwargs):
             dispatchers = User.objects.filter(role__name__in=['DISPATCHER', 'HOSPITAL_ADMINISTRATOR'])
             if instance.ambulance and instance.ambulance.hospital:
                 dispatchers = dispatchers.filter(hospital=instance.ambulance.hospital)
+            acting_user = getattr(instance, '_acting_user', None)
+            if acting_user:
+                dispatchers = dispatchers.exclude(id=acting_user.id)
             for user in dispatchers:
                 Notification.objects.create(
                     user=user,
@@ -136,6 +145,9 @@ def handle_mission_notifications(sender, instance, created, **kwargs):
             dispatchers = User.objects.filter(role__name__in=['DISPATCHER', 'HOSPITAL_ADMINISTRATOR'])
             if instance.ambulance and instance.ambulance.hospital:
                 dispatchers = dispatchers.filter(hospital=instance.ambulance.hospital)
+            acting_user = getattr(instance, '_acting_user', None)
+            if acting_user:
+                dispatchers = dispatchers.exclude(id=acting_user.id)
             for user in dispatchers:
                 Notification.objects.create(
                     user=user,

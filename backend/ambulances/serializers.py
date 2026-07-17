@@ -376,6 +376,23 @@ class EmergencyRequestSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['id', 'created_by', 'created_at', 'updated_at']
 
+    def create(self, validated_data):
+        instance = EmergencyRequest(**validated_data)
+        request = self.context.get('request')
+        if request and request.user:
+            instance._acting_user = request.user
+        instance.save()
+        return instance
+
+    def update(self, instance, validated_data):
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        request = self.context.get('request')
+        if request and request.user:
+            instance._acting_user = request.user
+        instance.save()
+        return instance
+
     def validate_latitude(self, value):
         if value < -90 or value > 90:
             raise serializers.ValidationError("Latitude must be between -90 and 90.")
@@ -545,13 +562,17 @@ class MissionSerializer(serializers.ModelSerializer):
                         remarks="Assigned on dispatch."
                     )
             
-            # Create Mission
-            mission = Mission.objects.create(
+            # Create Mission instance and assign acting user before saving
+            mission = Mission(
                 emergency_request=req,
                 ambulance=amb,
                 driver=driver,
                 status='ASSIGNED'
             )
+            request = self.context.get('request')
+            if request and request.user:
+                mission._acting_user = request.user
+            mission.save()
             
             # Transition ambulance lifecycle status
             user = self.context['request'].user if 'request' in self.context else None
@@ -610,6 +631,8 @@ class MissionSerializer(serializers.ModelSerializer):
             elif new_status == 'ARRIVED_HOSPITAL':
                 normalized_mission_status = 'HOSPITAL_ARRIVAL'
                 
+            if user:
+                instance._acting_user = user
             instance.status = normalized_mission_status
             instance.save()
             
