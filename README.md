@@ -145,21 +145,6 @@ npm install
 npm run dev
 ```
 
----
-
-## 🔑 Mock Test Credentials
-All mock accounts are preseeded with the password **`Password123`**:
-
-* **Hospital Admin**: `admin@hospital.org` (Full Write Access)
-* **Fleet Manager**: `fleet@hospital.org` (Full Write Access)
-* **Dispatcher**: `dispatcher@hospital.org` (Read-Only Access)
-* **Driver (David)**: `driver@hospital.org` (No Fleet Access)
-* **Driver (Bob)**: `driver2@hospital.org` (No Fleet Access)
-* **Driver (Rahul)**: `driver3@hospital.org` (No Fleet Access)
-* **Emergency Requestor**: `citizen@gmail.com` (No Fleet Access)
-
----
-
 ## 🧪 Testing the APIs
 To run backend unit test suites checking authentication rules, RBAC permissions, driver profiles, shifts, certifications, vehicle business constraints, emergency request lifecycles, and notification events:
 ```bash
