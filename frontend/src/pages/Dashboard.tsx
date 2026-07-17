@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react"
-import { useNavigate } from "react-router-dom"
+import { useNavigate, useLocation } from "react-router-dom"
 import {
   User,
   Lock,
@@ -210,7 +210,8 @@ export default function Dashboard() {
   }
 
   const userRole = typeof user?.role === "object" ? user.role?.name : user?.role
-  const [activeTab, setActiveTab] = useState("profile")
+  const location = useLocation()
+  const activeTab = location.pathname.substring(1) || "profile"
 
   // Role verification maps
   const showEmergencyQueueTab = ["HOSPITAL_ADMINISTRATOR", "DISPATCHER"].includes(userRole)
@@ -257,6 +258,17 @@ export default function Dashboard() {
       ],
     },
   ]
+
+  // Validate path routing
+  const validTabs = navigationItems.flatMap(group => group.items.map(item => item.id))
+
+  useEffect(() => {
+    if (location.pathname === "/" || location.pathname === "") {
+      navigate("/profile", { replace: true })
+    } else if (!validTabs.includes(activeTab)) {
+      navigate("/profile", { replace: true })
+    }
+  }, [location.pathname, activeTab, validTabs, navigate])
 
   const handleLogoutClick = async () => {
     try {
@@ -328,7 +340,7 @@ export default function Dashboard() {
                         <button
                           key={item.id}
                           onClick={() => {
-                            setActiveTab(item.id)
+                            navigate("/" + item.id)
                             setIsMobileOpen(false) // Auto-close drawer on mobile
                           }}
                           className={`w-full flex items-center rounded-lg text-sm font-medium transition-all ${isCollapsed

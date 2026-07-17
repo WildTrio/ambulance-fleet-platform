@@ -15,18 +15,15 @@ function App() {
           {/* Public Route */}
           <Route path="/login" element={<Login />} />
 
-          {/* Protected Route */}
+          {/* Protected Route with Sub-routes */}
           <Route
-            path="/"
+            path="/*"
             element={
               <ProtectedRoute>
                 <Dashboard />
               </ProtectedRoute>
             }
           />
-
-          {/* Redirect all unmatched routes */}
-          <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </Router>
       <Toaster 
