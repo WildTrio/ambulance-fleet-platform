@@ -73,6 +73,7 @@ export default function Dashboard() {
   const [unreadCount, setUnreadCount] = useState(0)
   const [showNotifDropdown, setShowNotifDropdown] = useState(false)
   const notifiedIdsRef = useRef<Set<number>>(new Set())
+  const isFirstFetchRef = useRef(true)
 
   // Fetch unread notifications for badge count
   const fetchUnreadCount = async () => {
@@ -85,9 +86,13 @@ export default function Dashboard() {
       unreadItems.forEach((item) => {
         if (!notifiedIdsRef.current.has(item.id)) {
           notifiedIdsRef.current.add(item.id)
-          notify.info(`${item.title}: ${item.message}`)
+          // Only show toast alerts for subsequent polls (not on initial mount)
+          if (!isFirstFetchRef.current) {
+            notify.info(`${item.title}: ${item.message}`)
+          }
         }
       })
+      isFirstFetchRef.current = false
     } catch (err) {
       console.error("Error fetching unread notification count:", err)
     }
